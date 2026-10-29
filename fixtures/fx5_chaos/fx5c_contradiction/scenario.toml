@@ -1,0 +1,7 @@
+id = "fx5c"
+name = "Unexpected Conditions — contradictory tests"
+request = "Fix the failing validation tests."
+expect_outcome = ["COMPLETED_PARTIAL"]
+hidden_tests = ".hidden/test_hidden_validator.py"
+chaos = { answers = "answers.json" }
+must_see_events = ["DECISION", "STRATEGY_CHANGED"]

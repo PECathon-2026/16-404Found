@@ -1,0 +1,7 @@
+id = "fx5a"
+name = "Unexpected Conditions — ambiguous request"
+request = "Make the report faster."
+expect_outcome = ["COMPLETED_VERIFIED"]
+hidden_tests = ".hidden/test_hidden_repgen.py"
+chaos = { answers = "answers.json" }
+must_see_events = ["HUMAN_PROMPT", "HUMAN_DECISION"]

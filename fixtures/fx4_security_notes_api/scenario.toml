@@ -1,0 +1,7 @@
+id = "fx4"
+name = "Security & Code Review — notes_api"
+request = "Add a limit parameter to search_notes (default 20)."
+expect_outcome = ["COMPLETED_VERIFIED"]
+hidden_tests = ".hidden/test_hidden_notes.py"
+chaos = {}
+must_see_events = ["TEST_RUN", "FINDING", "DECISION"]
