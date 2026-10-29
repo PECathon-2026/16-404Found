@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, TypedDict, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -180,6 +180,18 @@ class Executor(Protocol):
     async def run(self, argv: list[str], cwd: Path, timeout_s: int, env: dict[str, str] | None = None) -> ExecResult: ...
 
 
+class Hunk(TypedDict):
+    """One diff -U0 hunk against the baseline (the shape GitWorkspaces.hunks returns)."""
+
+    id: str  # stable within a diff: "H0", "H1", ...
+    path: str
+    old_start: int
+    old_len: int
+    new_start: int
+    new_len: int
+    patch: str
+
+
 class Workspaces(Protocol):
     """Git worktree manager. 'main' is the mission worktree; candidates and baseline are siblings."""
 
@@ -189,7 +201,7 @@ class Workspaces(Protocol):
     async def path(self, ref: str) -> Path: ...
     async def tree_sha(self, ref: str = "main") -> str: ...
     async def diff(self, ref: str = "main", against: str = "baseline") -> str: ...
-    async def hunks(self, ref: str = "main") -> list[dict[str, Any]]: ...
+    async def hunks(self, ref: str = "main") -> list[Hunk]: ...
     async def checkpoint(self, label: str, ref: str = "main") -> str: ...
     async def rollback(self, sha: str, ref: str = "main") -> None: ...
     async def adopt(self, candidate: str) -> None:

@@ -517,12 +517,8 @@ class ModeRuntime:
             assert ws is not None
             out: list[str] = []
             for h in await ws.hunks(ref):
-                path = h.get("path") or h.get("file")
-                lo = h.get("new_start", h.get("start", h.get("line_start")))
-                n = h.get("new_lines", h.get("lines"))
-                hi = h.get("line_end", (lo + max(int(n), 1) - 1) if lo is not None and n is not None else lo)
-                if path and lo is not None:
-                    out.append(f"{path}:L{lo}-L{hi}")
+                lo = h["new_start"]
+                out.append(f"{h['path']}:L{lo}-L{lo + max(h['new_len'], 1) - 1}")
             return out
 
         async def path_exists(rel: str) -> bool:

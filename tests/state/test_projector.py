@@ -191,6 +191,29 @@ def test_llm_turn_accumulates_budget() -> None:
     assert (b.tokens_in, b.tokens_out, b.tokens_cached, b.tokens_thinking, b.cost_usd) == (20, 10, 6, 4, 0.5)
 
 
+def test_budget_warning_applies_absolute_counters_and_ignores_unknown() -> None:
+    m = make_mission()
+    payload = {"fix_cycles": 2, "replans": 1, "tournaments": 1, "wall_clock_s": 12.5, "x": 9}
+    apply(m, ev(EventType.BUDGET_WARNING, payload))
+    b = m.budget
+    assert (b.fix_cycles, b.replans, b.tournaments, b.wall_clock_s) == (2, 1, 1, 12.5)
+    apply(m, ev(EventType.BUDGET_WARNING, {"fix_cycles": 3, "max_fix_cycles": 8}, 2))
+    assert (m.budget.fix_cycles, m.budget.tournaments) == (3, 1)  # absolute; untouched keys kept
+    apply(m, ev(EventType.BUDGET_WARNING, {"note": "nothing"}, 3))
+    assert m.budget.fix_cycles == 3
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{"fix_cycles": "2"}, {"fix_cycles": 1.5}, {"fix_cycles": True}, {"wall_clock_s": -1}, {"replans": None}],
+)
+def test_budget_warning_rejects_bad_values(payload: dict[str, Any]) -> None:
+    m = make_mission()
+    with pytest.raises(ProjectionError):
+        apply(m, ev(EventType.BUDGET_WARNING, payload))
+    assert m.budget.fix_cycles == 0
+
+
 def test_tool_call_counts() -> None:
     m = make_mission()
     apply(m, ev(EventType.TOOL_CALL, {"anything": 1}))

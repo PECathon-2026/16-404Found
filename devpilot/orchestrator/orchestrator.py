@@ -196,6 +196,7 @@ class Orchestrator:
         self._last_reviews: list[ReviewReport] = []
         self._last_security: SecurityReport | None = None
         self._t0 = 0.0
+        self._wall_base = 0.0  # wall clock already spent before this run (reload)
         self._human_wait = 0.0
         self._timeout: asyncio.Timeout | None = None
 
@@ -216,7 +217,12 @@ class Orchestrator:
             return self.mission.status
         loop = asyncio.get_running_loop()
         self._t0 = loop.time()
-        limit = float(self.mission.budget.limits.max_wall_clock_s)
+        # Counters live here but are mirrored into BUDGET_WARNING; re-seed them so a reload keeps them.
+        b = self.mission.budget
+        self._fix_cycles = max(self._fix_cycles, b.fix_cycles)
+        self._tournaments = max(self._tournaments, b.tournaments)
+        self._wall_base = b.wall_clock_s
+        limit = max(1.0, float(b.limits.max_wall_clock_s) - self._wall_base)
         try:
             try:
                 async with asyncio.timeout(limit) as cm:
@@ -250,7 +256,7 @@ class Orchestrator:
     # ------------------------------------------------------------------------------------------
 
     def _elapsed(self) -> float:
-        return asyncio.get_running_loop().time() - self._t0 - self._human_wait
+        return self._wall_base + asyncio.get_running_loop().time() - self._t0 - self._human_wait
 
     def _counters(self) -> guards.GuardCounters:
         return guards.GuardCounters(
@@ -1002,15 +1008,8 @@ class Orchestrator:
             log.warning("hunks unavailable for targeted tests: %s", exc)
             hunks = []
         for h in hunks:
-            path = h.get("path") or h.get("file")
-            start = h.get("new_start", h.get("start", h.get("line_start")))
-            count = h.get("new_lines", h.get("lines")) or 1
-            if path and start is not None:
-                sels.update(
-                    self.repo_intel.tests_covering(
-                        str(path), range(int(start), int(start) + max(int(count), 1))
-                    )
-                )
+            start, count = h["new_start"], h["new_len"]
+            sels.update(self.repo_intel.tests_covering(h["path"], range(start, start + max(count, 1))))
         if not hunks:
             for t in self._live_tasks():
                 if t.status == T.TESTING:
@@ -1308,7 +1307,13 @@ class Orchestrator:
             self._fix_cycles += 1
             await self._emit(
                 EventType.BUDGET_WARNING,
-                {"fix_cycles": self._fix_cycles, "max_fix_cycles": m.budget.limits.max_fix_cycles},
+                {
+                    "fix_cycles": self._fix_cycles,
+                    "max_fix_cycles": m.budget.limits.max_fix_cycles,
+                    "tournaments": self._tournaments,
+                    "replans": max(len(m.plans) - 1, 0),
+                    "wall_clock_s": round(self._elapsed(), 3),
+                },
                 summary=f"fix cycle {self._fix_cycles} of {m.budget.limits.max_fix_cycles}",
             )
         if self._stop:

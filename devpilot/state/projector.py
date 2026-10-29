@@ -183,6 +183,36 @@ def _llm_turn(mission: Mission, event: Event) -> Mutation:
     return mutate
 
 
+_BUDGET_COUNTERS: dict[str, type] = {
+    "fix_cycles": int,
+    "replans": int,
+    "tournaments": int,
+    "wall_clock_s": float,
+}
+
+
+def _budget_warning(mission: Mission, event: Event) -> Mutation:
+    """Orchestrator-owned counters travel in the payload as absolute values; unknown keys are ignored."""
+    updates: dict[str, int | float] = {}
+    for key, kind in _BUDGET_COUNTERS.items():
+        if key not in event.payload:
+            continue
+        raw = event.payload[key]
+        if isinstance(raw, bool) or not isinstance(raw, int | float):
+            raise ProjectionError(f"BUDGET_WARNING seq={event.seq}: {key!r} must be a number, got {raw!r}")
+        if raw < 0:
+            raise ProjectionError(f"BUDGET_WARNING seq={event.seq}: {key!r} must be >= 0")
+        if kind is int and not float(raw).is_integer():
+            raise ProjectionError(f"BUDGET_WARNING seq={event.seq}: {key!r} must be an integer")
+        updates[key] = kind(raw)
+
+    def mutate(stored: Event) -> None:
+        for key, value in updates.items():
+            setattr(mission.budget, key, value)
+
+    return mutate
+
+
 def _tool_call(mission: Mission, event: Event) -> Mutation:
     def mutate(stored: Event) -> None:
         mission.budget.tool_calls += 1
@@ -330,6 +360,7 @@ _STATEFUL: dict[EventType, Handler] = {
     EventType.CHECKPOINT: _checkpoint,
     EventType.HUMAN_PROMPT: _human_prompt,
     EventType.HUMAN_DECISION: _human_decision,
+    EventType.BUDGET_WARNING: _budget_warning,
 }
 
 _INFORMATIONAL: tuple[EventType, ...] = (
@@ -354,7 +385,6 @@ _INFORMATIONAL: tuple[EventType, ...] = (
     EventType.TOURNAMENT_DECIDED,
     EventType.ROLLBACK,
     EventType.APPLIED,
-    EventType.BUDGET_WARNING,
     EventType.BUDGET_EXCEEDED,
     EventType.MEMORY_RECALLED,
     EventType.MEMORY_WRITTEN,

@@ -81,13 +81,14 @@ def _recover_sync(path: Path) -> int:
     return last_seq
 
 
-def _append_sync(path: Path, line: bytes) -> None:
+def _append_sync(path: Path, line: bytes, fsync: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     # Binary mode so Windows does not rewrite "\n" and break the line == seq invariant.
     with path.open("ab") as f:
         f.write(line)
         f.flush()
-        os.fsync(f.fileno())
+        if fsync:
+            os.fsync(f.fileno())
 
 
 def read_events_sync(path: Path, from_seq: int = 0, to_seq: int | None = None) -> list[Event]:
@@ -103,7 +104,17 @@ def read_events_sync(path: Path, from_seq: int = 0, to_seq: int | None = None) -
 class JsonlEventStore:
     """``ports.EventStore`` backed by per-mission JSONL files."""
 
-    def __init__(self, runs_dir: Path, *, subscriber_queue_size: int = DEFAULT_QUEUE_SIZE) -> None:
+    def __init__(
+        self,
+        runs_dir: Path,
+        *,
+        subscriber_queue_size: int = DEFAULT_QUEUE_SIZE,
+        fsync: bool | None = None,
+    ) -> None:
+        """``fsync=None`` reads ``DEVPILOT_FSYNC`` (default on; ``"0"`` turns it off for fast tests)."""
+        if fsync is None:
+            fsync = os.environ.get("DEVPILOT_FSYNC", "1").strip() != "0"
+        self._fsync = fsync
         self._runs_dir = runs_dir
         self._queue_size = subscriber_queue_size
         self._states: dict[str, _MissionState] = {}
@@ -149,7 +160,7 @@ class JsonlEventStore:
             else:
                 stored = event.model_copy(update={"seq": st.last_seq + 1})
                 line = stored.model_dump_json().encode("utf-8") + b"\n"
-                await asyncio.to_thread(_append_sync, self.path_for(event.mission_id), line)
+                await asyncio.to_thread(_append_sync, self.path_for(event.mission_id), line, self._fsync)
                 st.last_seq = stored.seq
             self._fan_out(st, stored)
         return stored
