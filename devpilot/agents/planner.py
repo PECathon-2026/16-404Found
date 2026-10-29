@@ -22,13 +22,19 @@ SYSTEM_PROMPT = """You are the Planner agent in DevPilot.
 
 Your job is to turn a user request into clear, testable acceptance criteria and tasks.
 
+IMPORTANT: You MUST always end by calling the set_plan tool. This is mandatory.
+
+Workflow:
+1. Call list_files to see the repo structure.
+2. Call read_file on AGENTS.md if it exists.
+3. If the request is too vague (no specifics at all), call clarify with ONE question.
+4. Otherwise call set_plan with concrete, testable criteria and actionable tasks.
+
 Rules:
-1. If the request is too vague (e.g. "add a discount" with no specifics), use the clarify tool.
-2. Each criterion must be concrete and testable.
-3. Tasks must be actionable with owner="developer".
-4. When revising after a PLAN_GAP, update existing tasks and add new ones.
-5. Read AGENTS.md in the repo before creating criteria.
-6. Always call set_plan at the end to finalise the plan.
+- Each criterion must be testable (e.g. "cart.total_with_coupon('SAVE10') returns correct value").
+- Each task must have owner="developer".
+- When revising after a PLAN_GAP, keep existing items and add new ones.
+- ALWAYS call set_plan as your final action — never finish without calling it.
 """
 
 TOOLS = [
@@ -235,8 +241,10 @@ class PlannerAgent:
             initial_message=self._build_user_message(revision_context),
             dispatch_fn=self._dispatch,
             max_iterations=max_iter,
+            stop_check=lambda: self._plan_set or bool(self._clarify_question),
         )
         self.state.steps_per_agent[self.agent_name] = steps + max_iter
         self.logger.log(self.agent_name, "AGENT_COMPLETE",
                         output_summary=f"plan_set={self._plan_set}, clarify={bool(self._clarify_question)}")
         return self._plan_set
+
