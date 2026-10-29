@@ -9,11 +9,11 @@ Fable 5.1 migration, "New API features" under "Migrating to Claude Opus 5"), `sh
 
 | Constraint | Handling |
 |---|---|
-| Forced `tool_choice` (`tool`/`any`) is a 400 on Opus 5.5 and Sonnet 5.5 | Sent as `{"type":"auto"}`; the forced tool is `strict: true` (schema gets `additionalProperties:false`); final user text block `You must now call the tool <name> to submit your result.` is appended (to the last user message, or a new one). Haiku 5.5 accepts forcing, so it is passed through untouched. |
+| Forced `tool_choice` (`tool`/`any`) is a 400 on Opus 5.5 and Sonnet 5.5 | Sent as `{"type":"auto"}`; the forced tool is `strict: true` (schema gets `additionalProperties:false`); the adapter does **not** add the instruction. **Adapter never mutates messages; the runtime owns the submit instruction:** C03 appends `submit_instruction(name)` (a user text block) to its own history before the request when `needs_submit_instruction(req, model)` is true, so the text stays in the transcript. Haiku 5.5 accepts forcing, so it is passed through untouched. |
 | `budget_tokens` / `disabled` thinking / sampling params are 400s | `thinking={"type":"adaptive","display":"summarized"}`, `output_config.effort` always sent: budget None/<=4000 low, <=8000 medium, <=12000 high, else xhigh. No temperature/top_p/top_k. |
 | Thinking blocks must be replayed unchanged | `LLMResponse.raw_assistant_content` is `block.model_dump(mode="json", exclude_none=True)` of every block, in order (empty-text thinking blocks kept). `build_params` deep-copies history and never edits it. |
 | Refusal = HTTP 200 `stop_reason:"refusal"` | Checked first; response has empty text/tools and **empty `raw_assistant_content`** (do not append it to history). Opus/Sonnet send `fallbacks:"default"` with beta `server-side-fallback-2026-07-01` (typed param on `client.beta.messages` in SDK 2.3.0); Haiku never does (it 400s on a list). Disable with `enable_fallbacks=False`. |
-| 4 cache breakpoints max | `PromptBlock/ToolSchema(cache=True)` -> `cache_control: ephemeral`. Counting also includes markers already present in message blocks; the last 4 in render order (tools, system, messages) are kept, earlier ones dropped with a warning. |
+| 4 cache breakpoints max | `PromptBlock/ToolSchema(cache=True)` -> `cache_control: ephemeral`. Counting also includes markers already present in message blocks; the last 4 in render order (tools, system, messages) are kept, earlier ones dropped with a warning; only tool/system markers are ever removed (message content is never altered). |
 | Endpoint | Beta endpoint iff `params` has `betas` (`uses_beta`) - one place. |
 | Overload | SDK `max_retries=4` (when the adapter builds the client) plus up to 3 extra retries of 529 with exponential backoff + jitter, only before any text was streamed. 400/401/403/404 never retried. |
 
@@ -24,14 +24,13 @@ Fable 5.1 migration, "New API features" under "Migrating to Claude Opus 5"), `sh
 
 1. **Submit cannot be forced.** The adapter nudges with `auto` + instruction, but the model may still end
    its turn without calling `submit_*`. C03 must check `tool_uses` and run its own repair/retry round.
-   Re-send the same `tool_choice` request: the adapter re-applies the nudge each time.
+   Append `submit_instruction(name)` to the runtime's own history (permanently) when `needs_submit_instruction` is true; retries append a new nudge rather than editing anything. Call `assert_append_only(prev, new)` (`devpilot/llm/history.py`) before each request in debug/test mode.
 2. **History is append-only.** Thinking blocks are bound to the exact prefix (`system`, `tools`, every
    earlier message) and, on accounts created on/after 2026-08-31, a replayed block after any edit is a
    400 (Opus 5.5 "Breaking change 3: thinking blocks are tied to the model and the conversation";
    Haiku 5.5 "Breaking change 5"). Therefore C03 must NOT compact by rewriting/removing earlier turns,
    swap tools mid-conversation, or inject-then-delete reminders. Append the `raw_assistant_content` as is.
-   The trailing "must now call" instruction exists only in the request sent on that turn; do not add it
-   to stored history.
+   The submit instruction must be in stored history; the adapter will not inject it.
 3. **Compaction:** use server-side compaction / context editing instead (on-demand `compaction`
    parameter, beta `compact-2026-09-04`; or threshold compaction; or context editing / tool-result
    clearing), or client-side *simple* compaction that replaces the entire history with a summary and

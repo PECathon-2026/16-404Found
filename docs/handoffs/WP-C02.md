@@ -7,12 +7,14 @@
 - `devpilot/llm/pricing.py`: price table + `cost_usd(model, usage_counts)`; unknown model -> 0.0 + warning.
 - `devpilot/llm/cassette.py`: `CassetteLLM` (record / replay / passthrough), `CassetteMiss`.
 - `devpilot/llm/fake.py`: `ScriptedLLM`, `make_response` helper.
-- `tests/llm/` (51 tests, no network), `docs/llm-notes.md` (constraints C03 must know).
+- `devpilot/llm/history.py`: `assert_append_only(prev, new)` / `HistoryEditedError`.
+- `submit_instruction(name)` and `needs_submit_instruction(req, model)` helpers. Adapter never mutates messages; runtime owns the submit instruction.
+- `tests/llm/` (47 tests, no network), `docs/llm-notes.md` (constraints C03 must know).
 
 ## How to verify
 ```bash
-python -m pytest -q tests/llm      # 44 passed
-python -m pytest -q                # 51 passed
+python -m pytest -q tests/llm      # 47 passed
+python -m pytest -q                # 54 passed
 python -m ruff check devpilot/llm tests/llm   # All checks passed
 python -m mypy devpilot/llm        # Success: no issues found in 5 source files
 ```

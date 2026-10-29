@@ -13,7 +13,14 @@ from anthropic.types import Message
 from devpilot.config import Settings
 from devpilot.core.models import ModelTier
 from devpilot.core.ports import LLMRequest, LLMResponse, PromptBlock, ToolSchema
-from devpilot.llm.anthropic_adapter import AnthropicLLM, build_params, effort_for_budget, map_response
+from devpilot.llm.anthropic_adapter import (
+    AnthropicLLM,
+    build_params,
+    effort_for_budget,
+    map_response,
+    needs_submit_instruction,
+    submit_instruction,
+)
 from devpilot.llm.pricing import cost_usd
 
 OPUS, SONNET, HAIKU = "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"
@@ -58,11 +65,7 @@ def test_forced_tool_choice_rewritten_for_opus_and_sonnet() -> None:
         assert by_name["submit_plan"]["strict"] is True
         assert by_name["submit_plan"]["input_schema"]["additionalProperties"] is False
         assert "strict" not in by_name["fs_read"]
-        last = p["messages"][-1]
-        assert last["role"] == "user"
-        assert last["content"][-1] == {
-            "type": "text", "text": "You must now call the tool submit_plan to submit your result."}
-        assert last["content"][0] == {"type": "text", "text": "hello"}
+        assert p["messages"] == req.messages  # adapter never touches messages
     assert req.messages == [{"role": "user", "content": "hello"}]  # input untouched
     assert "additionalProperties" not in req.tools[1].input_schema
 
@@ -74,7 +77,18 @@ def test_forced_any_and_non_user_tail() -> None:
     p = build_params(req, OPUS)
     assert p["tool_choice"] == {"type": "auto"}
     assert all(t["strict"] for t in p["tools"])
-    assert p["messages"][-1]["role"] == "user"
+    assert p["messages"] == req.messages
+
+
+def test_submit_instruction_helpers() -> None:
+    assert submit_instruction("submit_plan") == {
+        "type": "text", "text": "You must now call the tool submit_plan to submit your result."}
+    assert submit_instruction()["type"] == "text"
+    forced = request(tools=[tool("submit_plan")], tool_choice={"type": "tool", "name": "submit_plan"})
+    assert needs_submit_instruction(forced, OPUS) and needs_submit_instruction(forced, SONNET)
+    assert not needs_submit_instruction(forced, HAIKU)
+    assert not needs_submit_instruction(request(tool_choice={"type": "auto"}), OPUS)
+    assert not needs_submit_instruction(request(), OPUS)
 
 
 def test_submit_tools_strict_even_when_not_forced_for_stable_tools_array() -> None:
@@ -137,7 +151,7 @@ def test_more_than_four_breakpoints_keeps_last_four(caplog: pytest.LogCaptureFix
     marked += [b["text"] for b in p["messages"][0]["content"] if "cache_control" in b]
     assert marked == ["t2", "s1", "s2", "m"]  # earliest (t1) dropped
     assert "dropped" in caplog.text
-    assert "cache_control" in msgs[0]["content"][0]  # caller's messages not mutated
+    assert p["messages"] == msgs
 
 
 def test_fallbacks_params() -> None:

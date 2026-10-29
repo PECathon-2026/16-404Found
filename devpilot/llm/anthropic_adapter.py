@@ -93,16 +93,20 @@ def _forced(tool_choice: dict[str, Any] | None) -> tuple[str, str | None] | None
     return None
 
 
-def _append_instruction(messages: list[dict[str, Any]], text: str) -> None:
-    block = {"type": "text", "text": text}
-    if messages and messages[-1].get("role") == "user":
-        content = messages[-1].get("content")
-        if isinstance(content, str):
-            messages[-1]["content"] = [{"type": "text", "text": content}, block]
-        else:
-            messages[-1]["content"] = [*(content or []), block]
-    else:
-        messages.append({"role": "user", "content": [block]})
+def submit_instruction(tool_name: str | None = None) -> dict[str, Any]:
+    """The user text block that nudges the model to call a ``submit_*`` tool.
+
+    Forced ``tool_choice`` is a 400 on Opus/Sonnet 5.5, so the AgentRuntime appends this block to its
+    own history (permanently, so history stays append-only) before the request. The adapter never does.
+    """
+    if tool_name:
+        return {"type": "text", "text": f"You must now call the tool {tool_name} to submit your result."}
+    return {"type": "text", "text": "You must now call one of the available tools."}
+
+
+def needs_submit_instruction(req: LLMRequest, model: str) -> bool:
+    """True when ``req`` forces a tool and ``model`` will have it rewritten to ``auto``."""
+    return _forced(req.tool_choice) is not None and rejects_forced_tool_choice(model)
 
 
 def _trim_breakpoints(tools: list[dict[str, Any]], system: list[dict[str, Any]],
@@ -117,15 +121,20 @@ def _trim_breakpoints(tools: list[dict[str, Any]], system: list[dict[str, Any]],
     excess = len(holders) - MAX_CACHE_BREAKPOINTS
     if excess <= 0:
         return 0
-    for h in holders[:excess]:
+    # Message content is never altered (append-only history), so only tool/system markers are dropped.
+    owned = {id(x) for x in (*tools, *system)}
+    removable = [h for h in holders if id(h) in owned]
+    dropped = 0
+    for h in removable[:excess]:
         del h["cache_control"]
-    return excess
+        dropped += 1
+    return dropped
 
 
 def build_params(req: LLMRequest, model: str, *, enable_fallbacks: bool = True) -> dict[str, Any]:
     """Translate an ``LLMRequest`` into keyword arguments for ``messages.stream``.
 
-    Pure: no network, no mutation of ``req``. A ``betas`` key is present only when the request
+    Pure: no network, no mutation of ``req``; ``messages`` are passed through verbatim. A ``betas`` key is present only when the request
     needs the beta endpoint (see ``uses_beta``).
     """
     forced = _forced(req.tool_choice)
@@ -163,10 +172,6 @@ def build_params(req: LLMRequest, model: str, *, enable_fallbacks: bool = True) 
         tool_choice = {"type": "auto"}
         if req.tool_choice and "disable_parallel_tool_use" in req.tool_choice:
             tool_choice["disable_parallel_tool_use"] = req.tool_choice["disable_parallel_tool_use"]
-        if forced_name:
-            _append_instruction(messages, f"You must now call the tool {forced_name} to submit your result.")
-        else:
-            _append_instruction(messages, "You must now call one of the available tools.")
         log.debug("forced tool_choice %s rewritten to auto for %s", req.tool_choice, model)
 
     dropped = _trim_breakpoints(tools, system, messages)
