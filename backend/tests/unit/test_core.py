@@ -185,3 +185,22 @@ def test_data_dir_is_always_absolute(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     s = Settings(DEVPILOT_DATA_DIR="./data")
     assert s.data_dir.is_absolute() and s.artifacts_dir.is_absolute() and str(s.data_dir).startswith(str(tmp_path.resolve()))
+
+
+@pytest.mark.asyncio
+async def test_zero_quota_autonomous_fallback():
+    from app.llm.fallback import AutonomousFallbackProvider
+    from app.agents.plan_validator import validate_plan
+    from app.agents.schemas import PlanResult, DeveloperResult
+
+    mission = {"workspace_path": ".", "request": "Add a login page", "title": "Add a login page"}
+    fb = AutonomousFallbackProvider(None, mission)
+    assert fb.can_handle("planner") and fb.can_handle("developer")
+
+    resp_plan = await fb.complete(system="", messages=[], tools=[], purpose="planner")
+    plan = PlanResult.model_validate(resp_plan.tool_calls[0].args)
+    assert not validate_plan(plan)
+
+    resp_dev = await fb.complete(system="", messages=[], tools=[], purpose="developer")
+    res = DeveloperResult.model_validate(resp_dev.tool_calls[0].args)
+    assert "Add a login page" in res.summary

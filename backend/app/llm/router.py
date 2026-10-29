@@ -92,6 +92,23 @@ class LLMRouter:
             w in str(last).lower() for w in ("quota", "credit", "balance", "insufficient_quota")
         )
         if is_quota:
+            from .fallback import AutonomousFallbackProvider
+            fb = AutonomousFallbackProvider(deps, mission)
+            if fb.can_handle(role):
+                deps.bus.publish(
+                    mission["id"],
+                    "quota.fallback_activated",
+                    "system",
+                    {
+                        "role": role,
+                        "details": str(last),
+                        "notice": "Zero-Quota Resilience: Live LLM quota exhausted ($0 balance). Autonomous Guild Fallback Engine activated.",
+                    },
+                )
+                r = await fb.complete(system=system, messages=messages, tools=tools, max_tokens=max_tokens, temperature=temperature, purpose=role)
+                self._record(deps, mission["id"], execution_id, fb, role, r, 50, "OK", fallback_from="quota_exhausted_fallback")
+                return r
+
             deps.bus.publish(
                 mission["id"],
                 "quota.exhausted",
