@@ -70,3 +70,11 @@ The first run records `runs/<id>/cassette.jsonl`; replay it with `--replay` to a
 - `mypy tests` was already blocked before this packet (duplicate module names `engine_helpers`); not addressed.
 - Real Ctrl-C on Windows (signal delivery into the Proactor loop) is covered by a cancellation test of `execute_mission`, not by a signal test.
 - With `--allow-missing` and no test runner, the mission fails at its first test run (`ComponentUnavailableError` -> FAILED, exit 3).
+
+## Follow-up: C09 report and memory wiring
+- Merged `origin/wp/c09-report` (no conflicts).
+- `build_stack` passes `make_end_hook(...)` as the orchestrator's `report_writer`. It drains the event bridge, calls `write_report`, and on `ReportConsistencyError` logs, then rewrites with `force=True` (red banner). It then emits `REPORT_WRITTEN {"path", ["forced", "consistency_errors"]}`. The orchestrator emits its own `REPORT_WRITTEN {"status"}` afterwards, so a mission has two such events (harmless; the first carries the path).
+- Memory: `SqliteMemoryStore` at `overrides["memory_path"]`, else `$DEVPILOT_MEMORY_DB`, else `<runs_dir>/../memory.sqlite` (chosen so tests and projects do not share `~/.devpilot`). Wrapped in `RecallingMemory`, which emits `MEMORY_RECALLED` (ids, kinds, count) on every non-empty recall. `ContextServices(memory=..., repo_key=repo_key_for(repo))`.
+- After the report (still in the REPORTING hook): `extract_memories` (report read back from `mission.json`) plus `lessons_from_reflection` for the latest Reflection submission; each item is written and `MEMORY_WRITTEN {"count", "kinds"}` emitted.
+- CLI: `run` prints the `REPORT.md` and `report.html` paths; `devpilot report MISSION_ID [--runs-dir] [--html]` re-renders from events.jsonl (forced with a warning if inconsistent; prints the Markdown, or the html path with `--html`).
+- Gap: the hook runs while the mission is still REPORTING, so memories are written before the terminal status event.

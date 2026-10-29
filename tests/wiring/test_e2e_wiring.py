@@ -6,6 +6,7 @@ fakes. The mission reaches a terminal state, the events file exists and replays 
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,21 @@ async def test_mission_runs_to_verified_through_real_wiring(git_repo: Path, tmp_
         assert EventType.TOOL_UNAVAILABLE in types  # delivered by the bridge, in the real log
         assert EventType.HUMAN_PROMPT in types and EventType.APPLIED in types
 
+        # report artefacts and memory
+        out = runs / stack.mission_id
+        for name in ("REPORT.md", "report.html", "mission.json"):
+            assert (out / name).is_file(), name
+        assert "Verified" in (out / "REPORT.md").read_text(encoding="utf-8")
+        assert not (out / "REPORT_REFUSED.txt").exists()
+        written = [e for e in events if e.type == EventType.REPORT_WRITTEN]
+        assert any(str(out / "REPORT.md") == e.payload.get("path") for e in written)
+        mem_events = [e for e in events if e.type == EventType.MEMORY_WRITTEN]
+        assert len(mem_events) == 1
+        stored = await stack.memory._inner.list_items()  # type: ignore[union-attr,attr-defined]
+        assert len(stored) >= 1 and mem_events[0].payload["count"] >= len(stored)
+        assert sum(mem_events[0].payload["kinds"].values()) == mem_events[0].payload["count"]
+        assert (tmp_path / "memory.sqlite").is_file()
+
         # the change really landed in the target repository
         assert "fixed by the scripted samurai" in (git_repo / "pager" / "paginate.py").read_text(
             encoding="utf-8"
@@ -142,3 +158,31 @@ async def test_reloaded_orchestrator_keeps_budget_counters(git_repo: Path, tmp_p
         assert orch2._fix_cycles == 3 and orch2._tournaments == 1
     finally:
         await stack.shutdown()
+
+
+async def test_devpilot_report_rerenders_from_events(git_repo: Path, tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from devpilot.cli import app
+
+    runs = tmp_path / "runs"
+    stack = await build(git_repo, runs)
+    try:
+        await stack.orchestrator.run()
+    finally:
+        await stack.shutdown()
+    (runs / stack.mission_id / "REPORT.md").unlink()
+    runner = CliRunner()
+    # CliRunner starts its own event loop via asyncio.run, so run it off this loop's thread
+    result = await asyncio.to_thread(
+        runner.invoke, app, ["report", stack.mission_id, "--runs-dir", str(runs)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Verified" in result.output
+    assert (runs / stack.mission_id / "REPORT.md").is_file()
+    html = await asyncio.to_thread(
+        runner.invoke, app, ["report", stack.mission_id, "--runs-dir", str(runs), "--html"]
+    )
+    assert html.exit_code == 0 and "report.html" in html.output
+    missing = await asyncio.to_thread(runner.invoke, app, ["report", "M-nope", "--runs-dir", str(runs)])
+    assert missing.exit_code == 66

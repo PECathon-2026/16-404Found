@@ -11,7 +11,7 @@ from orch_helpers import FakeHuman, FakeTestRunner, approve_all, green
 from rich.console import Console
 
 from devpilot import wiring
-from devpilot.cli import execute_mission
+from devpilot.cli import _print_summary, execute_mission
 from devpilot.cli_view import MissionView, agent_colour, phase_stepper
 from devpilot.config import Settings
 from devpilot.core import models as m
@@ -61,6 +61,12 @@ async def test_cancel_aborts_mission_and_reports(git_repo: Path, tmp_path: Path)
     assert events[-1].payload["status"] == "ABORTED"
     out = buf.getvalue()
     assert stack.mission_id in out and "ABORTED" in out
+    rdir = runs / stack.mission_id
+    assert (rdir / "REPORT.md").is_file() and (rdir / "report.html").is_file()  # aborted still reports
+    summary = io.StringIO()
+    _print_summary(console_to(summary), stack, status)
+    assert "REPORT.md:" in summary.getvalue()
+    assert "report.html" in summary.getvalue()
 
 
 async def test_live_view_renders_header_budget_timeline(git_repo: Path, tmp_path: Path) -> None:

@@ -32,7 +32,9 @@ from devpilot.core.events import Event, EventType
 from devpilot.core.models import MissionStatus
 from devpilot.engine import modes as mode_registry
 from devpilot.human import AnswersFileError, AnswersFileHumanChannel, ConsoleHumanChannel
-from devpilot.state.event_store import EVENTS_FILENAME, read_events_sync
+from devpilot.report.writer import ReportConsistencyError, write_report
+from devpilot.state.blackboard import EventSourcedBlackboard
+from devpilot.state.event_store import EVENTS_FILENAME, JsonlEventStore, read_events_sync
 
 app = typer.Typer(
     name="devpilot",
@@ -158,6 +160,10 @@ def _print_summary(console: Console, stack: wiring.MissionStack, status: Mission
     if m.outcome_reason:
         lines.append(f"{m.outcome_reason}\n")
     lines.append(f"events: {stack.store.path_for(stack.mission_id)}")
+    out = stack.runs_dir / stack.mission_id
+    for name in ("REPORT.md", "report.html"):
+        if (out / name).is_file():
+            lines.append(f"\n{name}: {out / name}")
     console.print(Panel(lines, title=f"mission {m.id}"))
 
 
@@ -385,6 +391,45 @@ def events(
             time.sleep(0.5)
     except KeyboardInterrupt:
         raise typer.Exit(EXIT_ABORTED) from None
+
+
+# --------------------------------------------------------------------------------------
+# report
+# --------------------------------------------------------------------------------------
+
+
+async def _rerender(mission_id: str, runs_dir: Path) -> tuple[Path, list[str]]:
+    store = JsonlEventStore(runs_dir)
+    bb = await EventSourcedBlackboard.load(store, mission_id)
+    out_dir = runs_dir / mission_id
+    try:
+        return await write_report(bb.mission, store, None, out_dir=out_dir), []
+    except ReportConsistencyError as exc:
+        return await write_report(bb.mission, store, None, out_dir=out_dir, force=True), exc.problems
+
+
+@app.command()
+def report(
+    mission_id: Annotated[str, typer.Argument(help="Mission id")],
+    runs_dir: Annotated[Path, typer.Option(help="Where mission data is stored.")] = Path("runs"),
+    html: Annotated[
+        bool, typer.Option("--html", help="Print the path of report.html instead of the Markdown.")
+    ] = False,
+) -> None:
+    """Re-render REPORT.md / report.html / mission.json from a mission's events.jsonl."""
+    console = make_console()
+    if not (runs_dir / mission_id / EVENTS_FILENAME).is_file():
+        console.print(f"[red]no events file for {mission_id} in {runs_dir}[/red]")
+        raise typer.Exit(66)
+    md_path, problems = asyncio.run(_rerender(mission_id, runs_dir))
+    if problems:
+        console.print("[red]Consistency check failed; report written with a warning banner:[/red]")
+        for p in problems:
+            console.print(f"  - {p}", markup=False)
+    if html:
+        console.print(str(md_path.with_name("report.html")), markup=False, soft_wrap=True)
+    else:
+        console.print(md_path.read_text(encoding="utf-8"), markup=False, soft_wrap=True)
 
 
 # --------------------------------------------------------------------------------------

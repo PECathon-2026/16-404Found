@@ -13,18 +13,19 @@ import asyncio
 import contextlib
 import importlib
 import inspect
+import json
 import logging
 import os
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
 from devpilot.config import Settings
-from devpilot.core.events import Event
-from devpilot.core.models import BudgetState, Evidence, Mission
+from devpilot.core.events import Event, EventType
+from devpilot.core.models import BudgetState, Evidence, MemoryItem, Mission, Reflection
 from devpilot.core.ports import (
     AgentRuntime,
     Blackboard,
@@ -33,6 +34,7 @@ from devpilot.core.ports import (
     Executor,
     HumanChannel,
     LLMPort,
+    MemoryStore,
     RepoIntelService,
     TestRunner,
     Workspaces,
@@ -41,7 +43,11 @@ from devpilot.engine.context import ContextServices
 from devpilot.engine.runtime import ModeRuntime
 from devpilot.human import AnswersFileHumanChannel, ConsoleHumanChannel
 from devpilot.llm import AnthropicLLM, CassetteLLM
+from devpilot.memory.extract import extract_memories, lessons_from_reflection, repo_key_for
+from devpilot.memory.store import SqliteMemoryStore
 from devpilot.orchestrator.orchestrator import Orchestrator
+from devpilot.report.model import MissionReport
+from devpilot.report.writer import ReportConsistencyError, write_report
 from devpilot.state.blackboard import EventSourcedBlackboard
 from devpilot.state.event_store import JsonlEventStore
 from devpilot.tools.executor_local import LocalExecutor
@@ -270,6 +276,89 @@ class MissionEvidenceLedger:
         return evidence_id in self._records
 
 
+class RecallingMemory:
+    """Wraps a MemoryStore so every non-empty recall is announced as MEMORY_RECALLED."""
+
+    def __init__(self, inner: MemoryStore, blackboard: Blackboard) -> None:
+        self._inner = inner
+        self._bb = blackboard
+
+    async def recall(self, repo_key: str, query: str, kinds: Sequence[str], k: int = 5) -> list[MemoryItem]:
+        items = await self._inner.recall(repo_key, query, kinds, k)
+        if items:
+            try:
+                await self._bb.emit(
+                    EventType.MEMORY_RECALLED,
+                    "system",
+                    {"kinds": list(kinds), "ids": [i.id for i in items], "count": len(items)},
+                    summary=f"recalled {len(items)} memories ({', '.join(kinds)})",
+                )
+            except Exception:
+                log.exception("could not emit MEMORY_RECALLED")
+        return items
+
+    async def write(self, item: MemoryItem) -> None:
+        await self._inner.write(item)
+
+    async def reinforce(self, item_id: str, delta: float) -> None:
+        await self._inner.reinforce(item_id, delta)
+
+
+def make_end_hook(
+    blackboard: Blackboard,
+    store: JsonlEventStore,
+    workspaces: Workspaces,
+    runs_dir: Path,
+    bridge: EventBridge,
+    memory: MemoryStore | None,
+) -> Callable[[Mission], Awaitable[None]]:
+    """Orchestrator ``report_writer``: write the report (always, forced if inconsistent), then memories."""
+
+    async def hook(mission: Mission) -> None:
+        await bridge.drain()  # gateway events must be in the log before the report reads it
+        out_dir = runs_dir / mission.id
+        extra: dict[str, Any] = {}
+        try:
+            path = await write_report(mission, store, workspaces, out_dir=out_dir)
+        except ReportConsistencyError as exc:
+            log.error("report failed its consistency check: %s", exc.problems)
+            path = await write_report(mission, store, workspaces, out_dir=out_dir, force=True)
+            extra = {"forced": True, "consistency_errors": exc.problems}
+        await blackboard.emit(
+            EventType.REPORT_WRITTEN,
+            "system",
+            {"path": str(path), **extra},
+            summary="report written" + (" (FORCED: consistency check failed)" if extra else ""),
+        )
+        if memory is not None:
+            try:
+                await _write_memories(blackboard, mission, memory, out_dir / "mission.json")
+            except Exception:
+                log.exception("writing memories failed")
+
+    return hook
+
+
+async def _write_memories(blackboard: Blackboard, mission: Mission, memory: MemoryStore, blob: Path) -> None:
+    report = MissionReport.model_validate(json.loads(blob.read_text(encoding="utf-8"))["report"])
+    items = extract_memories(mission, report)
+    reflections = [s for s in mission.submissions.values() if s.output_type == "Reflection"]
+    if reflections:
+        latest = max(reflections, key=lambda s: s.created_at)
+        items += lessons_from_reflection(mission, Reflection.model_validate(latest.payload))
+    for item in items:
+        await memory.write(item)
+    kinds: dict[str, int] = {}
+    for item in items:
+        kinds[item.kind] = kinds.get(item.kind, 0) + 1
+    await blackboard.emit(
+        EventType.MEMORY_WRITTEN,
+        "system",
+        {"count": len(items), "kinds": kinds},
+        summary=f"wrote {len(items)} memories",
+    )
+
+
 @dataclass(slots=True)
 class ToolRegistryContext:
     """What ``devpilot.tools.registry.register_all(gateway, ctx)`` receives."""
@@ -311,6 +400,7 @@ class MissionStack:
     orchestrator: Orchestrator
     repo_intel: RepoIntelService | None = None
     ddmin: DeltaDebugger | None = None
+    memory: MemoryStore | None = None
     tools_registered: bool = False
     tests_available: bool = False
     cassette_path: Path | None = None
@@ -480,7 +570,24 @@ async def build_stack(
 
     # EventSourcedBlackboard.emit has keyword-only extras where the port says **kw: a typing-only mismatch.
     port_bb = cast(Blackboard, bb)
-    services = ContextServices(workspaces=workspaces, repo_intel=repo_intel)
+    # Memory db: overrides["memory_path"], else $DEVPILOT_MEMORY_DB, else <runs_dir>/../memory.sqlite
+    # (shared by every mission of this runs dir, but never the user's home directory by surprise).
+    mem_path = Path(
+        ov.get("memory_path")
+        or os.environ.get("DEVPILOT_MEMORY_DB")
+        or runs_dir.resolve().parent / "memory.sqlite"
+    )
+    memory: MemoryStore | None = ov.get("memory")
+    if memory is None:
+        try:
+            memory = SqliteMemoryStore(mem_path)
+        except Exception:
+            log.exception("memory store unavailable")
+    if memory is not None:
+        memory = RecallingMemory(memory, port_bb)
+    services = ContextServices(
+        workspaces=workspaces, repo_intel=repo_intel, memory=memory, repo_key=repo_key_for(repo)
+    )
     runtime_ov = ov.get("runtime")
     runtime: AgentRuntime
     if runtime_ov is None:
@@ -501,7 +608,15 @@ async def build_stack(
     tests_available = tests is not None
     runner: TestRunner = tests if tests is not None else UnavailableTestRunner()
     orchestrator = Orchestrator(
-        port_bb, runtime, workspaces, runner, human, settings, repo_intel=repo_intel, ddmin=ddmin
+        port_bb,
+        runtime,
+        workspaces,
+        runner,
+        human,
+        settings,
+        repo_intel=repo_intel,
+        ddmin=ddmin,
+        report_writer=make_end_hook(port_bb, store, workspaces, runs_dir, bridge, memory),
     )
     for n in notes:
         log.info(n)
@@ -525,6 +640,7 @@ async def build_stack(
         orchestrator=orchestrator,
         repo_intel=repo_intel,
         ddmin=ddmin,
+        memory=memory,
         tools_registered=tools_registered,
         tests_available=tests_available,
         cassette_path=cassette_path,
