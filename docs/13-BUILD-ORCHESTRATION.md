@@ -58,9 +58,12 @@ flowchart LR
     G04 --> G07[G07 Security scanners]
     G01 --> G08[G08 Fixtures FX1-5]
     C01[C01 EventStore+Blackboard] --> G09[G09 API server + WS]
-    G09 --> G10[G10 Web shell + types]
-    G10 --> G11[G11 Mission Control panes]
-    G11 --> G12[G12 Gates + Report + Eval UI]
+    G09 --> G10[G10 Web shell + motion foundation]
+    G10 --> G11[G11 ★ Guild Constellation]
+    G10 --> G12[G12 Map · Seals · Loops · Ambient]
+    G11 --> G16[G16 Inspector · Gates · Film strip · Chronicle]
+    G12 --> G16
+    G16 --> G17[G17 Tauri desktop — stretch]
     C01 --> C02[C02 LLM adapter]
     C02 --> C03[C03 AgentRuntime]
     G04 --> C03
@@ -169,30 +172,49 @@ flowchart LR
 - `scripts/gen_types.py`: dumps JSON Schemas for `Mission`, `Event`, `Span`, `Evidence`, `HumanPrompt`, `HumanDecision` and the mode registry → `web/src/types/generated.ts` via `npx json-schema-to-typescript`.
 - **Tests:** httpx TestClient for every route; WS reconnect with `from_seq`; patch application round-trip equals the snapshot.
 
-### WP-G10 — Web shell
-**Spec:** docs/12 §1, §3, §9, §10.
-- Scaffold `web/` (Vite React TS strict, Tailwind, shadcn init with the "Sumi & Vermilion" tokens as CSS variables, dark/light toggle, fonts).
-- Router, providers, `api/rest.ts`, `api/ws.ts` (reconnecting with backoff, `from_seq`), `store/missionStore.ts`, `lib/eventMeta.ts` (icon + label + colour for every `EventType`), `lib/agentColors.ts`.
-- Launchpad page (docs/12 §6) fully working against `/api/fixtures` and `POST /api/missions`.
-- Header with state stepper + budget meters; the three-pane resizable layout with empty states; `⌘K` palette.
-- **Accept:** against `devpilot serve --fake`, the header and stepper update live; the layout persists; Lighthouse accessibility score ≥ 90.
+### WP-G10 — Web shell & motion foundation
+**Spec:** docs/12 §0, §1, §3, §4 (layout), §5.1–5.2, §6.11, §9, §10.
+- Scaffold `web/` (Vite React TS strict, Tailwind, shadcn with the "Sumi & Vermilion" tokens as CSS variables, fonts).
+- Router + View Transitions, providers, `api/rest.ts`, `api/ws.ts` (reconnecting, `from_seq`), `store/missionStore.ts` (incl. `presentation`, `quality`, `timeMode`), `lib/eventMeta.ts`, `lib/agentColors.ts`.
+- **Motion foundation:**
+  - `motion/tokens.ts`.
+  - `motion/fxBus.ts` with a **pure `eventToFx`** covering every `EventType` (stubs allowed for effects whose components don't exist yet) plus `FxQueue` (concurrency cap, coalescing, reduced-motion mapping).
+  - `motion/quality.ts` (detect-gpu tiers + WebGL availability).
+  - `motion/sound.ts` (howler, muted default).
+  - `motion/mood.ts` (pure mission → mood).
+- Primitives: `Glass`, `Spotlight`, `Grain`, `MagneticButton`, `Odometer`.
+- The Cinematic layout skeleton (Command Bar, left HUD, Stage slot, Inspector drawer, Film-strip slot) and the Focus layout (resizable three panes), with the shared-layout morph between them (`F`). `⌘K` palette and keyboard map.
+- Launchpad ("The Gate", docs/12 §7) fully working, with fixture bento cards and a View Transition into the War Room.
+- **Accept:** against `devpilot serve --fake`, the Command Bar, stepper and budget odometers update live; `eventToFx` has one unit test per `EventType`; Focus↔Cinematic morph works; reduced-motion verified; Lighthouse accessibility ≥ 90.
 
-### WP-G11 — Mission Control panes
-**Spec:** docs/12 §4.2–4.5. Sub-packets (can be done in any order):
-- **G11a** Plan board + plan version diff + AC list with confidence rings.
-- **G11b** Guild Graph (React Flow + elk layout; dynamic nodes; animated message edges; streaming tooltip).
-- **G11c** Timeline (virtuoso, grouping by mode invocation, filters, live-follow).
-- **G11d** Inspector (all entity kinds; structured renderers for each `LLMOutput` type; context slices *included vs hidden* badges).
-- **G11e** Diff tab (Monaco diff, ref selector, gutter decorations for findings/culprits/coverage).
-- **G11f** Tests heatmap.
-- **G11g** Trace waterfall (custom SVG, lanes, zoom).
-- **G11h** Tournament view (radar via Recharts).
-- **G11i** Time-travel scrubber.
-- **Accept:** each sub-packet has a Vitest component test plus a Playwright step in `web/e2e/mission.spec.ts` against the fake server.
+### WP-G11 — Guild Constellation ★ (signature visual, top UI priority)
+**Spec:** docs/12 §6.1, §6.2, §6.6, §5.3 rows for MODE_STARTED, TOOL_CALL, POLICY_DENIED, MESSAGE_SENT/FINDING, TEST_RUN, MODEL_ESCALATED, TOURNAMENT_*.
+- **G11a Agent Emblems:** `<AgentEmblem role state size>` for all 7 roles × 6 states (code-drawn SVG + motion). Storybook-style gallery page at `/dev/emblems` (dev only).
+- **G11b Constellation 2D:** React Flow ring layout by guild, dynamic Samurai/candidate nodes, glowing nodes with emblems, SVG particle arcs driven by `Fx.particle`, recipient pulses, click → Inspector. This is the **guaranteed baseline** and must be finished first.
+- **G11c Constellation 3D:** R3F scene with fresnel-rim emissive orbs, emblem sprites, instanced particle trails on Catmull-Rom arcs, bloom + vignette + noise, `CameraControls` auto-follow (`A`), double-click focus, ripple rings on test results, `frameloop="demand"` when idle. Same props and `Fx` interface as 2D; chosen by `quality`.
+- **G11d Tournament choreography:** split (1.2 s) → score bars → crown/drift (1.4 s) in both 2D and 3D.
+- **G11e Thought Stream:** per-word blur-in from `AGENT_TEXT_DELTA`, tool chips, collapsed thinking summary, jump-to-live.
+- **Accept:** the fake FX2 mission plays end-to-end with every listed choreography row visible. A 60 fps trace at 1080p on `medium` (Chrome performance profile attached to the handoff). WebGL disabled → automatic 2D fallback with identical interactions. Playwright screenshot tests for idle, active particle, and tournament crown.
 
-### WP-G12 — Human gates, Report page, Eval dashboard, Mode explorer
-**Spec:** docs/12 §5, §7, §8, `/modes`.
-- **Accept:** a full fake mission can be driven to completion **only through the UI** (answering clarification, dispute and apply gate).
+### WP-G12 — Campaign surfaces: Map, Seals, Loop Rings, Ambient
+**Spec:** docs/12 §6.3, §6.4, §6.5, §6.7.
+- **G12a Campaign Map:** Voronoi ink territories from the elk DAG layout, status fills, agent banners, the plan-revision ink wipe, version popover.
+- **G12b Hanko Seals:** AC glass cards, confidence ring, VERIFIED stamp timeline (exact keyframes in §6.3), FAILED crack, evidence tooltip.
+- **G12c Feedback Loop Ring:** attempt segments with hypothesis tooltips, odometer counter, crack-and-re-form on `STRATEGY_CHANGED`, hypothesis-diff view in the Inspector.
+- **G12d Ambient Mood shader:** domain-warped ink noise with 5 moods and uniform lerping, plus a CSS gradient fallback; a contrast screenshot test (≥ 4.5:1 for HUD text).
+- **Accept:** a fake mission run shows a plan revision wipe, ≥ 2 loop ticks including one strategy change, ≥ 3 seals, and mood transitions calm → failing → victorious.
+
+### WP-G16 — Inspection, Gates, Time Travel, Chronicle, Proving Ground, Codex
+**Spec:** docs/12 §6.8, §6.9, §6.10, §8.
+- **G16a Inspector** (all entity kinds, structured output renderers, included-vs-hidden context chips).
+- **G16b Focus tabs:** Timeline, Diff (Monaco + decorations), Tests heatmap, Trace waterfall, Tournament arena, Memory.
+- **G16c Imperial Decree** apply gate (scroll unroll, hold-to-confirm 1.5 s, short-id typing when any AC is not VERIFIED, request-changes particle, reject burn) + Messenger cards for clarification/command/escalation/dispute + browser notifications.
+- **G16d Film Strip:** keyframes, scrubbing with history snapshots (debounce + LRU), reverse-safe FX, **Replay 1×/2×/4×**, LIVE return. Backend: `GET /keyframes` (coordinate with G09).
+- **G16e Chronicle** (report page + print theme), **Proving Ground** (eval charts), **Codex** (mode explorer).
+- **Accept:** a full fake mission is driven to completion **only through the UI** (clarification, dispute, Decree approval), then replayed at 2× from the film strip.
+
+### WP-G17 — Desktop app (stretch)
+**Spec:** docs/12 §12. Tauri 2 shell, PyInstaller backend launched alongside, native notifications/tray/folder picker, `.dmg` + `.msi` builds, documented in README.
 
 ### WP-G13 — CLI
 `devpilot run|serve|resume|approve|reject|abort|report|eval|modes|doctor`. `run` without `--ui` shows a `rich` live view (header, plan, latest events) and prompts in the terminal (`HumanChannel` CLI adapter). `doctor` checks git, python, rg, bandit, semgrep, docker and the API key, and prints which fallbacks will be used.
@@ -257,9 +279,11 @@ make test   # N tests, all passing (paste summary line)
 | G07 Scanners | Gemini | ☐ |
 | G08 Fixtures | Gemini | ☐ |
 | G09 API + fake mission | Gemini | ☐ |
-| G10 Web shell | Gemini | ☐ |
-| G11a–i Panes | Gemini | ☐ |
-| G12 Gates/Report/Eval UI | Gemini | ☐ |
+| G10 Web shell + motion foundation | Gemini | ☐ |
+| G11a–e ★ Guild Constellation | Gemini | ☐ |
+| G12a–d Map/Seals/Loops/Ambient | Gemini | ☐ |
+| G16a–e Inspector/Gates/Film strip/Chronicle | Gemini | ☐ |
+| G17 Tauri desktop (stretch) | Gemini | ☐ |
 | G13 CLI | Gemini | ☐ |
 | G14 Eval harness | Gemini | ☐ |
 | G15 Docker | Gemini | ☐ |
@@ -273,4 +297,10 @@ make test   # N tests, all passing (paste summary line)
 | C08 Tournament | Claude | ☐ |
 | C09 Report/Memory | Claude | ☐ |
 
-**Suggested first parallel wave:** Gemini → G01, then G02 + G03 + G08 (independent). Claude → C01, C02.
+**Suggested waves**
+1. Gemini → G01, then G02 + G03 + G08. Claude → C01, C02.
+2. Gemini → **G09 (fake mission server) → G10 → G11 ★**. Claude → C03, C04, C05. The UI is demoable on fake data at the end of this wave.
+3. Gemini → G04–G07, G12, G13. Claude → C06–C09, reviews.
+4. Gemini → G16, G14, G15, then G17 if time allows. Everyone → real-engine end-to-end on FX2, eval runs, demo recording.
+
+> Because the UI is a large share of Gemini's work, run two Antigravity sessions in parallel during waves 2–3: one on the UI track (G09→G10→G11→G12→G16) and one on the infra track (G02–G08, G13–G15).
