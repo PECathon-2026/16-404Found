@@ -3,8 +3,8 @@
 - Result: **COMPLETED**
 - Mode: scripted
 - Patch: `c544ac94be2bcdaf290181e1079adaa11237bb12d8c0e1ce6f8733ddd6f2a03c`
-- Baseline tests: {'id': 'tst_01M64RFW8Y9K4ZA50SS9C44YT5', 'outcome': 'GREEN', 'total': 2, 'passed': 2, 'failed': 0}
-- Final tests: {'id': 'tst_01M64RFWKSK4QNTFESHJKGNJY7', 'outcome': 'GREEN', 'total': 5, 'passed': 5, 'failed': 0}
+- Baseline tests: {'id': 'tst_01M64S1PMWFJS87ZBGDDFK1583', 'outcome': 'GREEN', 'total': 2, 'passed': 2, 'failed': 0}
+- Final tests: {'id': 'tst_01M64S1Q2FWVE3QAGYFKB9F3F6', 'outcome': 'GREEN', 'total': 5, 'passed': 5, 'failed': 0}
 - Repair cycles: 0 · replans: 0 · steps: 7 · tokens: 960
 
 ## Verified (system / verifier evidence)
@@ -14,7 +14,7 @@
 ## Unresolved
 _none_
 ## Unverified agent claims
-- **exe_01M64RFWCAPXDV8RGEV2YHHZF3** developer self-report: Added validate_age with unittest-based tests. (agent claim; not used as evidence)
+- **exe_01M64S1PRAAGGFDY7TZZ6403P9** developer self-report: Added validate_age with unittest-based tests. (agent claim; not used as evidence)
 ## Model claims
 _none_
 ## Notes

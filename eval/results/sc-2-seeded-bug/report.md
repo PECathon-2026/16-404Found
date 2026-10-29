@@ -3,8 +3,8 @@
 - Result: **COMPLETED**
 - Mode: scripted
 - Patch: `fd3a67397b208f921df45bebb6a65bba02c824ce2420dcb576d5157217a81d7e`
-- Baseline tests: {'id': 'tst_01M64RF2XR2NRY0N0M4CFDWM81', 'outcome': 'GREEN', 'total': 2, 'passed': 2, 'failed': 0}
-- Final tests: {'id': 'tst_01M64RF5AKGPC08CNBHDQ7WN6K', 'outcome': 'GREEN', 'total': 3, 'passed': 3, 'failed': 0}
+- Baseline tests: {'id': 'tst_01M64S0WQH94FN1W280QNCEA7Q', 'outcome': 'GREEN', 'total': 2, 'passed': 2, 'failed': 0}
+- Final tests: {'id': 'tst_01M64S0Z2JAAKR98QBTHNAGH42', 'outcome': 'GREEN', 'total': 3, 'passed': 3, 'failed': 0}
 - Repair cycles: 0 · replans: 0 · steps: 7 · tokens: 1280
 
 ## Verified (system / verifier evidence)
@@ -14,6 +14,6 @@
 ## Unresolved
 _none_
 ## Unverified agent claims
-- **exe_01M64RF3M0H8WBT0N54BNM19Z0** developer self-report: Reproduced with a failing test (page 2 started one item early), fixed the slice start. (agent claim; not used as evidence)
+- **exe_01M64S0XE8CC3HAVXSPVSKFCK1** developer self-report: Reproduced with a failing test (page 2 started one item early), fixed the slice start. (agent claim; not used as evidence)
 ## Model claims
 _none_

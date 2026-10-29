@@ -68,11 +68,20 @@ async def import_repo(deps: Deps, source_type: str, source_ref: str, name: str |
         except GitError as e:
             shutil.rmtree(local, ignore_errors=True)
             msg = _scrub(str(e), tok)
-            if branch and ("Remote branch" in msg or "not found in upstream" in msg or "Could not find remote branch" in msg):
-                raise RepoError(f"branch '{branch}' does not exist on {owner}/{gname}. (Leave the Branch field blank to use the default branch)") from None
-            if re.search(r"not found|Authentication|could not read|403|404", msg, re.I):
-                raise RepoError("could not clone: repository not found, or it is private (provide a GitHub token with repo read access)") from None
-            raise RepoError(f"could not clone: {msg[:200]}") from None
+            # If authentication failed (e.g. invalid token or password manager autofilled a password),
+            # retry without authentication in case the repository is public:
+            if tok and ("Authentication failed" in msg or "Invalid username or token" in msg or "401" in msg or "403" in msg):
+                try:
+                    await git(local.parent, *args, env_extra=None, timeout=240)
+                    tok = None
+                except GitError:
+                    pass
+            if not local.exists():
+                if branch and ("Remote branch" in msg or "not found in upstream" in msg or "Could not find remote branch" in msg):
+                    raise RepoError(f"branch '{branch}' does not exist on {owner}/{gname}. (Leave the Branch field blank to use the default branch)") from None
+                if re.search(r"not found|Authentication|could not read|403|404", msg, re.I):
+                    raise RepoError("could not clone: repository not found, or it is private (if private, provide a GitHub personal access token with repo read scope)") from None
+                raise RepoError(f"could not clone: {msg[:200]}") from None
     else:
         raise RepoError("source_type must be LOCAL_PATH or GIT_URL")
     info = detect(local)

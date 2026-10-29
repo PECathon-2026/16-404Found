@@ -60,8 +60,8 @@
     "detail": ""
    }
   ],
-  "seconds": 10.3,
-  "mission_id": "mis_01M64RERRZERXQYXP2K33ZCRSA",
+  "seconds": 10.9,
+  "mission_id": "mis_01M64S0HZ65WHNMEFR0DZ90NNM",
   "final_status": "COMPLETED",
   "error": null
  },
@@ -101,8 +101,8 @@
     "detail": ""
    }
   ],
-  "seconds": 7.6,
-  "mission_id": "mis_01M64RF2SRJB53N5AKZFAZ6BKK",
+  "seconds": 7.9,
+  "mission_id": "mis_01M64S0WKDM368V6VCE0ZEVF4F",
   "final_status": "COMPLETED",
   "error": null
  },
@@ -162,8 +162,8 @@
     "detail": ""
    }
   ],
-  "seconds": 9.7,
-  "mission_id": "mis_01M64RFA6M9MHCEY20ED03HWNA",
+  "seconds": 8.9,
+  "mission_id": "mis_01M64S1491NDXB16ZEV2PMCW46",
   "final_status": "COMPLETED",
   "error": null
  },
@@ -233,8 +233,8 @@
     "detail": ""
    }
   ],
-  "seconds": 8.7,
-  "mission_id": "mis_01M64RFKP4WYR763SP5DARQWP5",
+  "seconds": 9.8,
+  "mission_id": "mis_01M64S1CYZM8AYYYHD40CH83S6",
   "final_status": "COMPLETED",
   "error": null
  },
@@ -274,8 +274,8 @@
     "detail": ""
    }
   ],
-  "seconds": 1.8,
-  "mission_id": "mis_01M64RFW5CSQ47M7ASVFACAAMN",
+  "seconds": 2.6,
+  "mission_id": "mis_01M64S1PH2ARDHXVDN4DAT0T45",
   "final_status": "COMPLETED",
   "error": null
  },
@@ -316,7 +316,7 @@
    }
   ],
   "seconds": 0.6,
-  "mission_id": "mis_01M64RFXYAB9SJFN0MRKASYPE0",
+  "mission_id": "mis_01M64S1S3DNMFY758ZDY01FAMM",
   "final_status": "AWAITING_HUMAN",
   "error": null
  },
@@ -356,8 +356,8 @@
     "detail": ""
    }
   ],
-  "seconds": 6.6,
-  "mission_id": "mis_01M64RFYG98MRAKPFJKFA9G7JZ",
+  "seconds": 6.4,
+  "mission_id": "mis_01M64S1SPZPTX9T2JQBNA9ZPY5",
   "final_status": "COMPLETED",
   "error": null
  },
@@ -412,8 +412,8 @@
     "detail": "2"
    }
   ],
-  "seconds": 6.1,
-  "mission_id": "mis_01M64RG4XWYAVNJWA31N5F0VK7",
+  "seconds": 6.7,
+  "mission_id": "mis_01M64S1ZYWGCJEEPPCHFRD8XF0",
   "final_status": "CANCELLED",
   "error": null
  },
@@ -453,8 +453,8 @@
     "detail": ""
    }
   ],
-  "seconds": 9.5,
-  "mission_id": "mis_01M64RGAVJ7WPKNSQ8QMZFATRM",
+  "seconds": 6.9,
+  "mission_id": "mis_01M64S26G8WJKABGAV1RP2SXW4",
   "final_status": "COMPLETED",
   "error": null
  }

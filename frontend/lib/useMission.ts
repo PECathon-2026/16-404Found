@@ -35,8 +35,10 @@ export function useMissionLive(id: string) {
   const pending = useRef<Set<Key>>(new Set());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alive = useRef(true);
+  const retries = useRef(0);
+  const retryRef = useRef<(k: Key[]) => void>(() => {});
 
-  const load = useCallback(async (keys: Key[], retried = false) => {
+  const load = useCallback(async (keys: Key[]) => {
     const fetchers: Record<Key, () => Promise<unknown>> = {
       detail: () => api.missions.get(id), tasks: () => api.missions.tasks(id), messages: () => api.missions.messages(id), decisions: () => api.missions.decisions(id),
       toolCalls: () => api.missions.toolCalls(id), diffs: () => api.missions.diffs(id), tests: () => api.missions.testRuns(id), findings: () => api.missions.findings(id),
@@ -53,7 +55,8 @@ export function useMissionLive(id: string) {
     const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
     if (failed && keys.includes("detail")) setError(failed.reason as ApiError); else if (keys.includes("detail")) setError(null);
     // A failed refresh must never leave a panel silently stale (an old approval screen is a safety problem): retry once.
-    if (failedKeys.length && !retried) setTimeout(() => { if (alive.current) void load(failedKeys, true); }, 1500);
+    if (!failedKeys.length) retries.current = 0;
+    else if (retries.current < 3) { retries.current += 1; setTimeout(() => { if (alive.current) retryRef.current(failedKeys); }, 1500); }
   }, [id]);
 
   const schedule = useCallback((keys: Key[]) => {
@@ -66,6 +69,8 @@ export function useMissionLive(id: string) {
       void load(ks);
     }, 250);
   }, [load]);
+
+  useEffect(() => { retryRef.current = schedule; }, [schedule]);
 
   useEffect(() => {
     alive.current = true;
