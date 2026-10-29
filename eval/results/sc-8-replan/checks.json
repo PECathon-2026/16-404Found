@@ -1,0 +1,32 @@
+[
+ {
+  "name": "reaches COMPLETED after replanning",
+  "ok": true,
+  "detail": "COMPLETED"
+ },
+ {
+  "name": "master chose REPLAN from a worker's evidence",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "obsolete tasks were SUPERSEDED, not silently dropped",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "acceptance criteria were re-versioned",
+  "ok": true,
+  "detail": "2"
+ },
+ {
+  "name": "work landed in the real files only",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "independent verifier PASS",
+  "ok": true,
+  "detail": ""
+ }
+]

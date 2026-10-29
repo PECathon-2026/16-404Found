@@ -1,0 +1,25 @@
+{
+  "planner": [
+    {"tool_calls": [{"name": "fs.list", "args": {"path": "."}}, {"name": "fs.read", "args": {"path": "notes.py"}}]},
+    {"tool_calls": [{"name": "submit_plan", "args": {
+      "objectives": ["Add search_notes(query) function with case-insensitive matching", "Add unit tests verifying query matching and case-insensitivity"],
+      "acceptance_criteria": [
+        {"id": "AC-1", "text": "The entire test suite passes", "verification": {"method": "command", "argv": ["python", "-m", "pytest", "-q"], "expect_exit": 0}},
+        {"id": "AC-2", "text": "test_search_notes passes", "verification": {"method": "test_selector", "selectors": ["tests/test_notes.py"]}},
+        {"id": "AC-3", "text": "search_notes is defined in notes.py", "verification": {"method": "static_check", "path": "notes.py", "must_match": "def search_notes\\(query"}}
+      ],
+      "tasks": [{"ref": "t1", "kind": "IMPLEMENT", "title": "Implement search_notes and unit tests", "description": "Add search_notes(query) in notes.py and unit tests in tests/test_notes.py",
+                 "criteria": ["AC-1", "AC-2", "AC-3"], "files_hint": ["notes.py", "tests/test_notes.py"]}],
+      "risks": ["Case folding edge cases"],
+      "repo_notes": "Small notes module with pytest."}}]}
+  ],
+  "developer": [
+    {"tool_calls": [{"name": "fs.search", "args": {"pattern": "def get_note_by_id"}}, {"name": "fs.read", "args": {"path": "notes.py"}}]},
+    {"tool_calls": [{"name": "fs.edit", "args": {"path": "notes.py", "edits": [{"old": "    return None", "new": "    return None\n\n\ndef search_notes(query: str):\n    q = query.lower()\n    return [n for n in NOTES if q in n[\"title\"].lower() or q in n[\"body\"].lower()]"}]}}]},
+    {"tool_calls": [{"name": "fs.read", "args": {"path": "tests/test_notes.py"}}]},
+    {"tool_calls": [{"name": "fs.edit", "args": {"path": "tests/test_notes.py", "edits": [{"old": "    assert get_note_by_id(999) is None", "new": "    assert get_note_by_id(999) is None\n\n\ndef test_search_notes():\n    from notes import search_notes\n    assert len(search_notes(\"coffee\")) == 1\n    assert search_notes(\"coffee\")[0][\"id\"] == 2\n\n\ndef test_search_notes_case_insensitive():\n    from notes import search_notes\n    assert len(search_notes(\"ROADMAP\")) == 1\n    assert search_notes(\"ROADMAP\")[0][\"id\"] == 1"}]}}]},
+    {"tool_calls": [{"name": "check.test", "args": {"scope": ["tests/test_notes.py"]}}]},
+    {"tool_calls": [{"name": "submit_result", "args": {"summary": "Implemented search_notes(query) with case-insensitive title and body matching, and added test cases.", "known_gaps": [], "assumptions": [], "confidence": 0.95}}]}
+  ]
+}
+

@@ -1,0 +1,8 @@
+{
+  "id": "sc-3-failing-test",
+  "title": "Make the failing tests pass",
+  "prompt": "The test suite is red. Make all tests pass without changing the tests.",
+  "category": "Test-Driven Recovery",
+  "description": "Two stacked bugs: fixing add() reveals a second, different failure in total(). Demonstrates the feedback loop: new evidence changes the next action.",
+  "config": {}
+}

@@ -1,0 +1,8 @@
+{
+  "id": "sc-1-feature",
+  "title": "Add note search",
+  "prompt": "Add a search(query) function to notes.py that returns the notes whose title or body contains the query, case-insensitively. Add tests. Existing behaviour must not change.",
+  "category": "Feature Implementation",
+  "description": "Adds a feature across two tasks (implement, then tests) while preserving existing behaviour; the quality review notices the missing tests in between.",
+  "config": {}
+}

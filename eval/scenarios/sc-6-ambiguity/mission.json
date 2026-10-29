@@ -1,0 +1,8 @@
+{
+  "id": "sc-6-ambiguity",
+  "title": "Make checkout faster",
+  "prompt": "Make checkout faster.",
+  "category": "Unexpected Conditions: ambiguous requirement",
+  "description": "The request is ambiguous. The Architect must stop and ask a concrete question; no file may change before the human answers.",
+  "config": {}
+}

@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/* Design tokens: UI-REGISTRY.md §B. Dark-first; light theme via [data-theme="light"]. */
+:root {
+  --bg-canvas: #0b0d10;
+  --bg-surface: #12151a;
+  --bg-elevated: #181c22;
+  --bg-hover: #1e232b;
+  --border-subtle: #232830;
+  --border-strong: #323945;
+  --text-primary: #e8eaed;
+  --text-secondary: #a3aab5;
+  --text-muted: #8a92a0;
+  --accent: #6e8bff;
+  --accent-fg: #0b0d10;
+  --st-running: #5aa9ff;
+  --st-success: #3fb68b;
+  --st-warning: #e3a23b;
+  --st-danger: #e5534b;
+  --st-critical: #ff6b9a;
+  --st-neutral: #8a92a0;
+  --st-approval: #b48cff;
+  --diff-add: rgba(63, 182, 139, 0.14);
+  --diff-del: rgba(229, 83, 75, 0.14);
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  --bg-canvas: #ffffff;
+  --bg-surface: #f7f8fa;
+  --bg-elevated: #ffffff;
+  --bg-hover: #eef0f3;
+  --border-subtle: #e4e7ec;
+  --border-strong: #cbd0d8;
+  --text-primary: #14171c;
+  --text-secondary: #4a5160;
+  --text-muted: #5d6573;
+  --accent: #3b5bdb;
+  --accent-fg: #ffffff;
+  --st-running: #1d6fd1;
+  --st-success: #1c8a5f;
+  --st-warning: #a86a05;
+  --st-danger: #c4352d;
+  --st-critical: #c2255c;
+  --st-neutral: #5d6573;
+  --st-approval: #7a45d6;
+  --diff-add: rgba(28, 138, 95, 0.12);
+  --diff-del: rgba(196, 53, 45, 0.1);
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-canvas: var(--bg-canvas);
+  --color-surface: var(--bg-surface);
+  --color-elevated: var(--bg-elevated);
+  --color-hover: var(--bg-hover);
+  --color-line: var(--border-subtle);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--text-primary);
+  --color-fg2: var(--text-secondary);
+  --color-fg3: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-running: var(--st-running);
+  --color-success: var(--st-success);
+  --color-warning: var(--st-warning);
+  --color-danger: var(--st-danger);
+  --color-critical: var(--st-critical);
+  --color-neutral: var(--st-neutral);
+  --color-approval: var(--st-approval);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html, body { background: var(--bg-canvas); color: var(--text-primary); }
+body { font-family: var(--font-sans); font-size: 14px; line-height: 22px; font-variant-numeric: tabular-nums; }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+@keyframes dp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.dp-pulse { animation: dp-pulse 1.2s ease-in-out infinite; }
+@keyframes dp-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+.dp-in { animation: dp-in .16s cubic-bezier(.2,.8,.2,1); }
+@media (prefers-reduced-motion: reduce) {
+  .dp-pulse, .dp-in { animation: none; }
+  * { scroll-behavior: auto !important; transition: none !important; }
+}
+
+/* React Flow follows the theme */
+.react-flow { --xy-background-color: transparent; --xy-edge-stroke: var(--border-strong); --xy-controls-button-background-color: var(--bg-elevated);
+  --xy-controls-button-color: var(--text-primary); --xy-controls-button-border-color: var(--border-subtle); }
+.react-flow__attribution { display: none; }

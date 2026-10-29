@@ -1,0 +1,29 @@
+{
+  "planner": [
+    {"tool_calls": [{"name": "fs.list", "args": {"path": "."}}, {"name": "fs.read", "args": {"path": "user_service.py"}}]},
+    {"tool_calls": [{"name": "submit_plan", "args": {
+      "objectives": ["Add find_user_by_email function with parameterized query", "Pass security review with zero high/critical vulnerabilities"],
+      "acceptance_criteria": [
+        {"id": "AC-1", "text": "The entire test suite passes", "verification": {"method": "command", "argv": ["python", "-m", "pytest", "-q"], "expect_exit": 0}},
+        {"id": "AC-2", "text": "test_find_user_by_email passes", "verification": {"method": "test_selector", "selectors": ["tests/test_user_service.py"]}},
+        {"id": "AC-3", "text": "Parameterized SQL query without f-string injection", "verification": {"method": "static_check", "path": "user_service.py", "must_match": "SELECT \\* FROM users WHERE email = \\?"}}
+      ],
+      "tasks": [{"ref": "t1", "kind": "IMPLEMENT", "title": "Implement find_user_by_email and tests", "description": "Add find_user_by_email in user_service.py and tests in tests/test_user_service.py",
+                 "criteria": ["AC-1", "AC-2", "AC-3"], "files_hint": ["user_service.py", "tests/test_user_service.py"]}],
+      "risks": ["SQL injection vulnerabilities if query string is unparameterized"],
+      "repo_notes": "User service sqlite backend."}}]}
+  ],
+  "developer": [
+    {"tool_calls": [{"name": "fs.read", "args": {"path": "user_service.py"}}]},
+    {"tool_calls": [{"name": "fs.edit", "args": {"path": "user_service.py", "edits": [{"old": "    return conn", "new": "    return conn\n\n\ndef find_user_by_email(conn, email: str):\n    cur = conn.cursor()\n    cur.execute(f\"SELECT * FROM users WHERE email = '{email}'\")\n    row = cur.fetchone()\n    return {\"id\": row[0], \"email\": row[1], \"name\": row[2]} if row else None"}]}}]},
+    {"tool_calls": [{"name": "fs.read", "args": {"path": "tests/test_user_service.py"}}]},
+    {"tool_calls": [{"name": "fs.edit", "args": {"path": "tests/test_user_service.py", "edits": [{"old": "    assert cur.fetchone()[0] == 2", "new": "    assert cur.fetchone()[0] == 2\n\n\ndef test_find_user_by_email():\n    from user_service import get_connection, find_user_by_email\n    conn = get_connection()\n    u = find_user_by_email(conn, \"alice@example.com\")\n    assert u is not None\n    assert u[\"name\"] == \"Alice\""}]}}]},
+    {"tool_calls": [{"name": "check.test", "args": {"scope": ["tests/test_user_service.py"]}}]},
+    {"tool_calls": [{"name": "submit_result", "args": {"summary": "Implemented find_user_by_email with SQL lookup.", "known_gaps": [], "assumptions": [], "confidence": 0.8}}]},
+    {"tool_calls": [{"name": "fs.read", "args": {"path": "user_service.py"}}]},
+    {"tool_calls": [{"name": "fs.edit", "args": {"path": "user_service.py", "edits": [{"old": "cur.execute(f\"SELECT * FROM users WHERE email = '{email}'\")", "new": "cur.execute(\"SELECT * FROM users WHERE email = ?\", (email,))"}]}}]},
+    {"tool_calls": [{"name": "check.test", "args": {}}]},
+    {"tool_calls": [{"name": "submit_result", "args": {"summary": "Remediated SQL injection by parameterizing the query with ? placeholder.", "known_gaps": [], "assumptions": [], "confidence": 0.95}}]}
+  ]
+}
+

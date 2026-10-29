@@ -1,0 +1,26 @@
+{
+  "planner": [
+    {"tool_calls": [{"name": "fs.list", "args": {"path": "."}}, {"name": "fs.read", "args": {"path": "tests/test_calc.py"}}]},
+    {"tool_calls": [{"name": "submit_plan", "args": {
+      "objectives": ["Make the existing test suite pass without modifying any test"],
+      "acceptance_criteria": [
+        {"id": "AC-1", "text": "The whole test suite passes", "verification": {"method": "command", "argv": ["python", "-m", "pytest", "-q"], "expect_exit": 0}},
+        {"id": "AC-2", "text": "test_add and test_total_rounds_to_two_decimals pass", "verification": {"method": "test_selector", "selectors": ["tests/test_calc.py"]}},
+        {"id": "AC-3", "text": "The tests were not modified", "verification": {"method": "static_check", "path": "tests/test_calc.py", "must_match": "assert total\\(\\[0.11, 0.22, 0.333\\]\\) == 0.66"}}
+      ],
+      "tasks": [{"ref": "t1", "kind": "IMPLEMENT", "title": "Fix the implementation in calc.py", "description": "Find why the tests fail and fix calc.py (not the tests).",
+                 "criteria": ["AC-1", "AC-2", "AC-3"], "files_hint": ["calc.py"]}],
+      "risks": ["Fixing the first failure may reveal another"],
+      "repo_notes": "Flat module calc.py with tests/test_calc.py (pytest)."}}]}
+  ],
+  "developer": [
+    {"tool_calls": [{"name": "fs.search", "args": {"pattern": "def add"}}, {"name": "fs.read", "args": {"path": "calc.py"}}]},
+    {"tool_calls": [{"name": "fs.edit", "args": {"path": "calc.py", "edits": [{"old": "    return a - b", "new": "    return a + b"}]}}]},
+    {"tool_calls": [{"name": "check.test", "args": {"scope": ["tests/test_calc.py"]}}]},
+    {"tool_calls": [{"name": "submit_result", "args": {"summary": "add() subtracted instead of adding; changed it to addition.", "known_gaps": [], "assumptions": ["only add() was wrong"], "confidence": 0.8}}]},
+    {"tool_calls": [{"name": "fs.read", "args": {"path": "calc.py"}}]},
+    {"tool_calls": [{"name": "fs.edit", "args": {"path": "calc.py", "edits": [{"old": "round(s, 1)", "new": "round(s, 2)"}]}}]},
+    {"tool_calls": [{"name": "check.test", "args": {}}]},
+    {"tool_calls": [{"name": "submit_result", "args": {"summary": "total() rounded to 1 decimal; the docstring and test require 2. Fixed the rounding.", "known_gaps": [], "assumptions": [], "confidence": 0.9}}]}
+  ]
+}

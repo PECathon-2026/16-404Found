@@ -1,0 +1,57 @@
+[
+ {
+  "name": "reaches COMPLETED after approval",
+  "ok": true,
+  "detail": "COMPLETED"
+ },
+ {
+  "name": "modifies the EXISTING file notes.py (not a rewrite elsewhere)",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "adds new tests as a new file",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "developer used >= 3 distinct tools",
+  "ok": true,
+  "detail": "check.test, fs.create, fs.edit, fs.read, fs.search, git.checkpoint"
+ },
+ {
+  "name": "read/search happened before the first edit",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "baseline test run recorded",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "independent verifier: every criterion PASS",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "no regressions vs baseline",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "no existing test modified",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "quality review flagged missing tests and the re-scan resolved it after tests were added",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "approved patch applied to the source repository",
+  "ok": true,
+  "detail": ""
+ }
+]

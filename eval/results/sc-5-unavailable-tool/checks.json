@@ -1,0 +1,32 @@
+[
+ {
+  "name": "reaches COMPLETED",
+  "ok": true,
+  "detail": "COMPLETED"
+ },
+ {
+  "name": "every gate test run used the fallback runner (pytest was never faked)",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "fallback runner produced real GREEN evidence",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "the unavailable tool was recorded as ENV_MISSING_TOOL",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "the final report discloses degraded evidence",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "verifier honoured the disabled tool and still PASSed via unittest",
+  "ok": true,
+  "detail": ""
+ }
+]

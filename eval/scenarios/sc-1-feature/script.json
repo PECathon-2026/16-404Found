@@ -1,0 +1,213 @@
+{
+ "planner": [
+  {
+   "tool_calls": [
+    {
+     "name": "fs.list",
+     "args": {
+      "path": "."
+     }
+    },
+    {
+     "name": "fs.read",
+     "args": {
+      "path": "notes.py"
+     }
+    },
+    {
+     "name": "fs.read",
+     "args": {
+      "path": "tests/test_notes.py"
+     }
+    }
+   ]
+  },
+  {
+   "tool_calls": [
+    {
+     "name": "submit_plan",
+     "args": {
+      "objectives": [
+       "Add case-insensitive note search without changing existing behaviour"
+      ],
+      "acceptance_criteria": [
+       {
+        "id": "AC-1",
+        "text": "search() is case-insensitive over title and body (tested)",
+        "verification": {
+         "method": "test_selector",
+         "selectors": [
+          "tests/test_search.py"
+         ]
+        }
+       },
+       {
+        "id": "AC-2",
+        "text": "Existing behaviour is preserved: the whole suite passes",
+        "verification": {
+         "method": "command",
+         "argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q"
+         ],
+         "expect_exit": 0
+        }
+       },
+       {
+        "id": "AC-3",
+        "text": "notes.py defines search()",
+        "verification": {
+         "method": "static_check",
+         "path": "notes.py",
+         "must_match": "def search\\("
+        }
+       }
+      ],
+      "tasks": [
+       {
+        "ref": "t1",
+        "kind": "IMPLEMENT",
+        "title": "Implement search() in notes.py",
+        "description": "Add search(query) next to get_note, following the module's style.",
+        "criteria": [
+         "AC-1",
+         "AC-3"
+        ],
+        "files_hint": [
+         "notes.py"
+        ]
+       },
+       {
+        "ref": "t2",
+        "kind": "WRITE_TESTS",
+        "title": "Test search()",
+        "description": "Add tests/test_search.py covering case-insensitivity, body matches and no match.",
+        "depends_on": [
+         "t1"
+        ],
+        "criteria": [
+         "AC-1",
+         "AC-2"
+        ],
+        "files_hint": [
+         "tests/test_search.py"
+        ]
+       }
+      ],
+      "risks": [
+       "Do not change list_notes/get_note"
+      ],
+      "repo_notes": "Flat module notes.py, pytest tests in tests/."
+     }
+    }
+   ]
+  }
+ ],
+ "developer": [
+  {
+   "tool_calls": [
+    {
+     "name": "fs.search",
+     "args": {
+      "pattern": "def get_note"
+     }
+    },
+    {
+     "name": "fs.read",
+     "args": {
+      "path": "notes.py"
+     }
+    }
+   ]
+  },
+  {
+   "tool_calls": [
+    {
+     "name": "fs.edit",
+     "args": {
+      "path": "notes.py",
+      "edits": [
+       {
+        "old": "    return None\n",
+        "new": "    return None\n\n\ndef search(query):\n    \"\"\"Notes whose title or body contains `query` (case-insensitive).\"\"\"\n    q = query.lower()\n    return [n for n in NOTES if q in n[\"title\"].lower() or q in n[\"body\"].lower()]\n"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "tool_calls": [
+    {
+     "name": "check.test",
+     "args": {
+      "scope": [
+       "tests/test_notes.py"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "tool_calls": [
+    {
+     "name": "submit_result",
+     "args": {
+      "summary": "Added search() after get_note; existing functions untouched.",
+      "known_gaps": [],
+      "assumptions": [],
+      "confidence": 0.8
+     }
+    }
+   ]
+  },
+  {
+   "tool_calls": [
+    {
+     "name": "fs.read",
+     "args": {
+      "path": "notes.py"
+     }
+    }
+   ]
+  },
+  {
+   "tool_calls": [
+    {
+     "name": "fs.create",
+     "args": {
+      "path": "tests/test_search.py",
+      "content": "from notes import search\n\n\ndef test_search_is_case_insensitive():\n    assert [n[\"id\"] for n in search(\"MILK\")] == [1]\n\n\ndef test_search_matches_body():\n    assert [n[\"id\"] for n in search(\"quarterly\")] == [2]\n\n\ndef test_search_no_match():\n    assert search(\"zzz\") == []\n"
+     }
+    }
+   ]
+  },
+  {
+   "tool_calls": [
+    {
+     "name": "check.test",
+     "args": {
+      "scope": [
+       "tests/test_search.py"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "tool_calls": [
+    {
+     "name": "submit_result",
+     "args": {
+      "summary": "Added tests for search().",
+      "known_gaps": [],
+      "assumptions": [],
+      "confidence": 0.8
+     }
+    }
+   ]
+  }
+ ]
+}
