@@ -23,21 +23,52 @@ export function CriteriaList({ criteria, objectives }: { criteria: Criterion[]; 
   );
 }
 
-function TaskNode({ data }: NodeProps<Node<{ t: Task; sel: boolean }>>) {
+function TaskNode({ data }: NodeProps<Node<{ t: Task; sel: boolean; onSelect?: () => void }>>) {
   const t = data.t;
   return (
-    <div className={cx("w-[210px] rounded-lg border bg-elevated px-3 py-2 text-xs shadow-sm", data.sel ? "border-accent" : "border-line-strong", t.status === "SUPERSEDED" && "opacity-50")}>
+    <div
+      onClick={() => data.onSelect?.()}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); data.onSelect?.(); } }}
+      title={`Click to inspect task ${t.key}: ${t.title}`}
+      className={cx(
+        "w-[210px] rounded-lg border bg-elevated px-3 py-2 text-xs shadow-sm cursor-pointer select-none transition-all duration-150",
+        "hover:scale-[1.03] hover:shadow-md hover:border-accent active:scale-[0.98] group",
+        data.sel ? "ring-2 ring-accent border-accent shadow-md bg-hover" : "border-line-strong",
+        t.status === "SUPERSEDED" && "opacity-50"
+      )}
+    >
       <Handle type="target" position={Position.Left} className="!bg-line-strong" />
-      <div className="flex items-center justify-between gap-2"><span className={cx("font-mono font-semibold", t.status === "SUPERSEDED" && "line-through")}>{t.key}</span><Badge tone={TASK_TONE[t.status]} className={t.status === "IN_PROGRESS" ? "dp-pulse" : ""}>{t.status.replace("_", " ")}</Badge></div>
+      <div className="flex items-center justify-between gap-2">
+        <span className={cx("font-mono font-semibold group-hover:text-accent transition-colors flex items-center gap-1", t.status === "SUPERSEDED" && "line-through")}>
+          {t.key}
+          <span className="text-[10px] text-accent opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
+        </span>
+        <Badge tone={TASK_TONE[t.status]} className={t.status === "IN_PROGRESS" ? "dp-pulse" : ""}>{t.status.replace("_", " ")}</Badge>
+      </div>
       <p className="mt-1 line-clamp-2 text-fg2">{t.title}</p>
-      <p className="mt-1 text-fg3">{t.kind}{t.assignee ? ` · ${t.assignee}` : ""}{t.retries > 1 ? ` · attempt ${t.retries}` : ""}</p>
+      <div className="mt-1 flex items-center justify-between text-[11px] text-fg3">
+        <span>{t.kind}{t.assignee ? ` · ${t.assignee}` : ""}</span>
+        {t.retries > 1 && <span className="text-warning">retry {t.retries}</span>}
+      </div>
       <Handle type="source" position={Position.Right} className="!bg-line-strong" />
     </div>
   );
 }
 const nodeTypes = { task: TaskNode };
 
-export function TaskDependencyGraph({ tasks, onSelect, selected }: { tasks: Task[]; onSelect?: (t: Task) => void; selected?: string | null }) {
+export function TaskDependencyGraph({
+  tasks,
+  onSelect,
+  selected,
+  onFilterAgent
+}: {
+  tasks: Task[];
+  onSelect?: (t: Task) => void;
+  selected?: string | null;
+  onFilterAgent?: (agent: string) => void;
+}) {
   const [mode, setMode] = useState<"graph" | "list">("graph");
   const { nodes, edges } = useMemo(() => {
     const depth = new Map<string, number>();
@@ -52,16 +83,28 @@ export function TaskDependencyGraph({ tasks, onSelect, selected }: { tasks: Task
     const col = new Map<number, number>();
     const nodes: Node[] = tasks.map((t) => {
       const x = d(t); const y = col.get(x) ?? 0; col.set(x, y + 1);
-      return { id: t.id, type: "task", position: { x: x * 260, y: y * 100 }, data: { t, sel: selected === t.id }, draggable: false };
+      return {
+        id: t.id,
+        type: "task",
+        position: { x: x * 260, y: y * 100 },
+        data: { t, sel: selected === t.id, onSelect: () => onSelect?.(t) },
+        draggable: false
+      };
     });
     const edges: Edge[] = tasks.flatMap((t) => t.depends_on.map((s) => ({ id: `${s}-${t.id}`, source: s, target: t.id, animated: t.status === "IN_PROGRESS", style: { stroke: "var(--border-strong)" } })));
     return { nodes, edges };
-  }, [tasks, selected]);
+  }, [tasks, selected, onSelect]);
+
+  const selectedTaskObj = tasks.find((t) => t.id === selected);
 
   if (tasks.length === 0) return <EmptyState title="Plan not created yet" description="Tasks and their dependencies appear after the planner submits a validated plan." />;
   return (
     <div>
-      <div className="flex items-center justify-between px-4 py-2"><span className="text-xs text-fg3">{tasks.filter((t) => t.status === "DONE").length} of {tasks.filter((t) => t.status !== "SUPERSEDED").length} tasks done</span>
+      <div className="flex items-center justify-between px-4 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-fg3">{tasks.filter((t) => t.status === "DONE").length} of {tasks.filter((t) => t.status !== "SUPERSEDED").length} tasks done</span>
+          <span className="text-[11px] text-accent font-medium">· Click any task node to inspect</span>
+        </div>
         <div className="flex gap-1"><Button size="sm" variant={mode === "graph" ? "secondary" : "ghost"} onClick={() => setMode("graph")}><Network className="h-3.5 w-3.5" aria-hidden />Graph</Button>
           <Button size="sm" variant={mode === "list" ? "secondary" : "ghost"} onClick={() => setMode("list")}><ListTree className="h-3.5 w-3.5" aria-hidden />List</Button></div></div>
       {mode === "graph" ? (
@@ -71,11 +114,62 @@ export function TaskDependencyGraph({ tasks, onSelect, selected }: { tasks: Task
         </div>
       ) : (
         <ul className="divide-y divide-line border-t border-line">{tasks.map((t) => (
-          <li key={t.id} className="flex items-start gap-3 px-4 py-2.5"><Mono className="font-semibold">{t.key}</Mono>
+          <li
+            key={t.id}
+            onClick={() => onSelect?.(t)}
+            className={cx("flex items-start gap-3 px-4 py-2.5 cursor-pointer hover:bg-hover transition-colors", selected === t.id && "bg-accent/10 border-l-2 border-accent")}
+          >
+            <Mono className="font-semibold">{t.key}</Mono>
             <div className="min-w-0 flex-1"><p className={cx("text-sm", t.status === "SUPERSEDED" && "line-through opacity-60")}>{t.title}</p>
               <p className="text-[11px] text-fg3">{t.kind}{t.assignee ? ` · ${t.assignee}` : ""}{t.depends_on.length ? ` · after ${t.depends_on.map((d) => tasks.find((x) => x.id === d)?.key).filter(Boolean).join(", ")}` : ""}{t.criteria_refs.length ? ` · serves ${t.criteria_refs.join(", ")}` : ""}</p>
               {t.failure_context && <p className="mt-0.5 text-[11px] text-danger">repair evidence: {String((t.failure_context as { kind?: string }).kind ?? "failure")}</p>}</div>
             <Badge tone={TASK_TONE[t.status]}>{t.status.replace("_", " ")}</Badge></li>))}</ul>)}
+
+      {/* Selected Task Inspector with Internal Links */}
+      {selectedTaskObj && (
+        <div className="border-t border-line bg-surface/80 p-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Mono className="font-bold text-accent">{selectedTaskObj.key}</Mono>
+              <span className="font-medium text-fg">{selectedTaskObj.title}</span>
+              <Badge tone={TASK_TONE[selectedTaskObj.status]}>{selectedTaskObj.status}</Badge>
+            </div>
+            {selectedTaskObj.assignee && onFilterAgent && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => onFilterAgent(selectedTaskObj.assignee!)}
+                className="text-xs"
+              >
+                Filter {selectedTaskObj.assignee} Activity →
+              </Button>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-fg3">
+            <span>Kind: <b className="text-fg2">{selectedTaskObj.kind}</b></span>
+            {selectedTaskObj.assignee && <span>Assignee: <b className="text-fg2">{selectedTaskObj.assignee}</b></span>}
+            {selectedTaskObj.depends_on.length > 0 && (
+              <span>Depends on: {selectedTaskObj.depends_on.map((d) => {
+                const dep = tasks.find((x) => x.id === d);
+                return (
+                  <button
+                    key={d}
+                    onClick={() => { if (dep) onSelect?.(dep); }}
+                    className="ml-1 font-mono text-accent underline hover:opacity-80"
+                  >
+                    {dep?.key ?? d}
+                  </button>
+                );
+              })}</span>
+            )}
+            {selectedTaskObj.criteria_refs.length > 0 && (
+              <span>Serves criteria: {selectedTaskObj.criteria_refs.map((c) => (
+                <span key={c} className="ml-1 font-mono font-semibold text-accent">{c}</span>
+              ))}</span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

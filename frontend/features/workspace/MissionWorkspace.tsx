@@ -1,7 +1,7 @@
 "use client";
 import { Ban, GitBranch, Pause, Play, Wifi, WifiOff } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import React, { Suspense, useCallback, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBoundary, ErrorCard, Mono, Skeleton, Tabs, Github } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
@@ -31,9 +31,13 @@ function Keyed() {
 
 function Workspace({ missionId }: { missionId: string }) {
   const live = useMissionLive(missionId);
+  const searchParams = useSearchParams();
+  const initialTab = (searchParams.get("tab") as Tab) || "activity";
+  const initialAgent = searchParams.get("agent") || null;
   const { detail: d, error } = live;
-  const [tab, setTab] = useState<Tab>("activity");
-  const [agent, setAgent] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const [agent, setAgent] = useState<string | null>(initialAgent);
+  const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const [replayEvents, setReplayEvents] = useState<DevEvent[] | null>(null);
   const [ctlErr, setCtlErr] = useState<string | null>(null);
   const onFrame = useCallback((e: DevEvent[] | null) => setReplayEvents(e), []);
@@ -90,12 +94,28 @@ function Workspace({ missionId }: { missionId: string }) {
           <Card><Tabs label="Mission views" tabs={tabs} value={tab} onChange={setTab} />
             <ErrorBoundary label="This view">
               {tab === "activity" && <ActivityFeed missionId={d.id} events={events} messages={live.messages} toolCalls={live.toolCalls} loading={live.loading} filterAgent={agent} onFilterAgent={setAgent} />}
-              {tab === "plan" && <div><CardHeader title="Acceptance criteria" sub={`version ${d.criteria_version}`} /><CriteriaList criteria={d.acceptance_criteria} objectives={d.objectives} /><div className="border-t border-line"><TaskDependencyGraph tasks={live.tasks} /></div>
+              {tab === "plan" && <div><CardHeader title="Acceptance criteria" sub={`version ${d.criteria_version}`} /><CriteriaList criteria={d.acceptance_criteria} objectives={d.objectives} />
+                <div className="border-t border-line">
+                  <TaskDependencyGraph
+                    tasks={live.tasks}
+                    selected={selectedTask}
+                    onSelect={(t) => setSelectedTask(t.id === selectedTask ? null : t.id)}
+                    onFilterAgent={(a) => { setAgent(a); setTab("activity"); }}
+                  />
+                </div>
                 {d.risks.length > 0 && <div className="border-t border-line px-4 py-3"><h4 className="text-xs font-semibold text-fg3">Risks noted by the planner</h4><ul className="mt-1 list-disc pl-5 text-sm text-fg2">{d.risks.map((r) => <li key={r}>{r}</li>)}</ul></div>}</div>}
               {tab === "diff" && <DiffPanel missionId={d.id} diffs={live.diffs} loading={live.loading} />}
               {tab === "tests" && <TestsPanel runs={live.tests} loading={live.loading} />}
               {tab === "security" && <SecurityPanel missionId={d.id} findings={live.findings} loading={live.loading} onChanged={() => void live.refresh()} />}
-              {tab === "network" && <AgentNetworkGraph detail={d} messages={live.messages} events={events} onSelectAgent={(a) => { setAgent(a); setTab("activity"); }} />}
+              {tab === "network" && (
+                <AgentNetworkGraph
+                  detail={d}
+                  messages={live.messages}
+                  events={events}
+                  selectedAgent={agent}
+                  onSelectAgent={(a) => { setAgent(a); setTab("activity"); }}
+                />
+              )}
               {tab === "timeline" && <div><MissionTimeline events={events} />{!active && <div className="border-t border-line p-4"><ExecutionReplay missionId={d.id} onFrame={onFrame} /></div>}</div>}
               {tab === "report" && <ReportPanel d={d} onChanged={() => void live.refresh()} />}
             </ErrorBoundary></Card>

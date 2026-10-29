@@ -30,16 +30,42 @@ export function AgentCard({ a, onClick, active }: { a: AgentRow; onClick?: () =>
   );
 }
 
-function AgentNode({ data }: NodeProps<Node<{ a: (typeof AGENTS)[number]; row?: AgentRow; failed: number }>>) {
-  const { a, row, failed } = data;
+function AgentNode({ data }: NodeProps<Node<{ a: (typeof AGENTS)[number]; row?: AgentRow; failed: number; selected?: boolean; onSelect?: () => void }>>) {
+  const { a, row, failed, selected } = data;
   const running = row?.status === "thinking";
   return (
-    <div className={cx("w-[170px] rounded-xl border bg-elevated px-3 py-2 shadow-sm", failed ? "border-danger" : running ? "border-running" : "border-line-strong", a.id === "verifier" && "border-dashed")}>
+    <div
+      onClick={() => data.onSelect?.()}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); data.onSelect?.(); } }}
+      title={`Click to inspect ${a.name} (${a.role})`}
+      className={cx(
+        "w-[175px] rounded-xl border bg-elevated px-3 py-2 shadow-sm transition-all duration-200 cursor-pointer select-none",
+        "hover:scale-[1.03] hover:shadow-lg hover:border-accent active:scale-[0.98] group",
+        selected ? "ring-2 ring-accent border-accent shadow-md bg-hover" : failed ? "border-danger" : running ? "border-running" : "border-line-strong",
+        a.id === "verifier" && "border-dashed"
+      )}
+    >
       <Handle type="target" position={Position.Top} className="!opacity-0" /><Handle type="source" position={Position.Bottom} className="!opacity-0" />
       <Handle id="l" type="target" position={Position.Left} className="!opacity-0" /><Handle id="r" type="source" position={Position.Right} className="!opacity-0" />
-      <div className="flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-md" style={{ background: `${a.color}22`, color: a.color }}><a.Icon className="h-4 w-4" aria-hidden /></span>
-        <div className="leading-tight"><div className="text-xs font-semibold">{a.name}</div><div className="text-[10px] text-fg3">{a.id === "verifier" ? "isolated process" : a.role}</div></div></div>
-      <div className="mt-1.5 flex items-center justify-between text-[10px]"><span className={running ? "dp-pulse text-running" : "text-fg3"}>{running ? "working" : "idle"}</span><span className="text-fg3">{row?.executions ?? 0} runs</span>{failed > 0 && <span className="text-danger">{failed} failed</span>}</div>
+      <div className="flex items-center gap-2">
+        <span className="grid h-7 w-7 place-items-center rounded-md transition-transform duration-200 group-hover:scale-110" style={{ background: `${a.color}22`, color: a.color }}>
+          <a.Icon className="h-4 w-4" aria-hidden />
+        </span>
+        <div className="leading-tight min-w-0 flex-1">
+          <div className="text-xs font-semibold group-hover:text-accent transition-colors flex items-center justify-between">
+            <span className="truncate">{a.name}</span>
+            <span className="text-[10px] text-accent font-normal opacity-0 group-hover:opacity-100 transition-opacity">inspect ↗</span>
+          </div>
+          <div className="text-[10px] text-fg3 truncate">{a.id === "verifier" ? "isolated process" : a.role}</div>
+        </div>
+      </div>
+      <div className="mt-1.5 flex items-center justify-between text-[10px]">
+        <span className={running ? "dp-pulse text-running font-medium" : "text-fg3"}>{running ? "working" : "idle"}</span>
+        <span className="text-fg3">{row?.executions ?? 0} runs</span>
+        {failed > 0 && <span className="text-danger font-medium">{failed} failed</span>}
+      </div>
     </div>
   );
 }
@@ -47,13 +73,37 @@ const nodeTypes = { agent: AgentNode };
 const POS: Record<string, { x: number; y: number }> = { master: { x: 250, y: 130 }, planner: { x: 0, y: 0 }, developer: { x: 500, y: 0 }, tester: { x: 0, y: 260 }, security: { x: 250, y: 300 }, verifier: { x: 500, y: 260 } };
 
 /** Edges come only from persisted messages: solid = control flow, dashed = peer critique/feedback loop. */
-export function AgentNetworkGraph({ detail, messages, events, onSelectAgent }: { detail: MissionDetail | null; messages: Msg[]; events: DevEvent[]; onSelectAgent?: (a: string) => void }) {
+export function AgentNetworkGraph({
+  detail,
+  messages,
+  events,
+  selectedAgent,
+  onSelectAgent,
+}: {
+  detail: MissionDetail | null;
+  messages: Msg[];
+  events: DevEvent[];
+  selectedAgent?: string | null;
+  onSelectAgent?: (a: string) => void;
+}) {
   const now = useNow();
   const { nodes, edges, loops } = useMemo(() => {
     const rows = new Map((detail?.agents ?? []).map((a) => [a.agent_id, a]));
     const failedBy = new Map<string, number>();
     events.filter((e) => e.type === "tool.failed" && now - new Date(e.created_at).getTime() < 3600_000).forEach((e) => failedBy.set(e.actor, (failedBy.get(e.actor) ?? 0) + 1));
-    const nodes: Node[] = AGENTS.map((a) => ({ id: a.id, type: "agent", position: POS[a.id], data: { a, row: rows.get(a.id), failed: failedBy.get(a.id) ?? 0 }, draggable: false }));
+    const nodes: Node[] = AGENTS.map((a) => ({
+      id: a.id,
+      type: "agent",
+      position: POS[a.id],
+      data: {
+        a,
+        row: rows.get(a.id),
+        failed: failedBy.get(a.id) ?? 0,
+        selected: selectedAgent === a.id,
+        onSelect: () => onSelectAgent?.(a.id),
+      },
+      draggable: false,
+    }));
     const counts = new Map<string, { n: number; types: Set<string>; peer: boolean }>();
     const known = new Set<string>(AGENTS.map((a) => a.id));
     for (const m of messages) {
@@ -70,13 +120,19 @@ export function AgentNetworkGraph({ detail, messages, events, onSelectAgent }: {
         labelStyle: { fontSize: 10, fill: "var(--text-muted)" }, labelBgStyle: { fill: "var(--bg-canvas)" } };
     });
     return { nodes, edges, loops: detail?.counters.repair_cycles ?? 0 };
-  }, [detail, messages, events, now]);
+  }, [detail, messages, events, now, selectedAgent, onSelectAgent]);
 
   if (!detail) return <EmptyState title="No mission selected" />;
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-xs text-fg3">
-        <span>Solid = control · dashed amber = peer critique / feedback</span>{loops > 0 && <Badge tone="danger">repair ×{loops}</Badge>}{messages.length === 0 && <span>No agent messages yet.</span>}</div>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs text-fg3">
+        <div className="flex items-center gap-2">
+          <span>Solid = control · dashed amber = peer critique / feedback</span>
+          {loops > 0 && <Badge tone="danger">repair ×{loops}</Badge>}
+          {messages.length === 0 && <span>No agent messages yet.</span>}
+        </div>
+        <span className="text-[11px] text-accent font-medium">💡 Click any agent node to inspect & link</span>
+      </div>
       <div className="h-[420px] border-t border-line" role="img" aria-label={`Agent network with ${messages.length} messages`}>
         <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.15 }} nodesConnectable={false} proOptions={{ hideAttribution: true }}
           onNodeClick={(_, n) => onSelectAgent?.(n.id)}><Background gap={24} /></ReactFlow></div>
