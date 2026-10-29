@@ -190,7 +190,7 @@ def scan_injection(ws: Path) -> list[dict[str, Any]]:
             if INJECTION.search(line):
                 out.append({
                     "rule": "prompt_injection", "category": "PROMPT_INJECTION", "cwe": "CWE-1427", "file": rel, "line": i,
-                    "severity": "MEDIUM", "evidence": redact_line(line), "fingerprint": fingerprint("pi", rel, line),
+                    "severity": "LOW", "evidence": redact_line(line), "fingerprint": fingerprint("pi", rel, line),
                     "recommendation": "Treat this text as untrusted data. DevPilot did not follow it; remove it from the repository.",
                     "confidence": 0.7,
                 })

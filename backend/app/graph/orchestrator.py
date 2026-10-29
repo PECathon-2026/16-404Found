@@ -122,7 +122,7 @@ class Orchestrator:
                                                 "detected_commands": info["detected_commands"], "ambiguities": []})
             # reconnaissance: planted prompt-injection text in repo content is reported, never followed
             for it in scan_injection(ws.path)[:10]:
-                s.add_finding(mid, "system", Severity.MEDIUM, "PROMPT_INJECTION", it["file"], it["line"], it["line"], it["evidence"], it["recommendation"],
+                s.add_finding(mid, "system", Severity.LOW, "PROMPT_INJECTION", it["file"], it["line"], it["line"], it["evidence"], it["recommendation"],
                               it["confidence"], it["fingerprint"], None, {"kind": "file", "id": it["file"], "locator": f"L{it['line']}"}, "scanner:pre_existing", cwe=it["cwe"])
             await self.tester.baseline(mid)
         except Exception as e:  # noqa: BLE001

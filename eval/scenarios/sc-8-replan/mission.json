@@ -1,0 +1,8 @@
+{
+  "id": "sc-8-replan",
+  "title": "Add goodbye()",
+  "prompt": "Add a goodbye(name) function that returns 'Goodbye, <name>!' and test it.",
+  "category": "Adaptive Planning",
+  "description": "The first plan names a file that does not exist. The developer reports it, the master replans from that evidence, old tasks are superseded and the criteria version is bumped.",
+  "config": {}
+}

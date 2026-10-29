@@ -1,0 +1,8 @@
+{
+  "id": "sc-2-seeded-bug",
+  "title": "Fix duplicated item on page 2",
+  "prompt": "Users report that page 2 of the item list repeats the last item of page 1. Find and fix the bug.",
+  "category": "Bug Investigation",
+  "description": "A seeded off-by-one with no failing test: the developer must reproduce it with a new test first, then fix the root cause with a minimal diff.",
+  "config": {}
+}
