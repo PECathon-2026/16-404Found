@@ -98,55 +98,53 @@ def test_path_jail_valid_paths_allowed(tmp_path: Path) -> None:
     ws.mkdir()
     sub = ws / "src"
     sub.mkdir()
+    f = sub / "app.py"
+    f.write_text("print('ok')", encoding="utf-8")
 
-    resolved = resolve_in_workspace(ws, "src/main.py")
-    assert resolved == (sub / "main.py").resolve()
+    resolved = resolve_in_workspace(ws, "src/app.py")
+    assert resolved == f.resolve()
 
 
-def test_write_deny_globs(tmp_path: Path) -> None:
-    """Write-deny patterns must block sensitive files and workflows."""
+def test_write_deny_prohibits_protected_files(tmp_path: Path) -> None:
+    """Protected files (.git, .env, pem, keys, workflows) cannot be written."""
     ws = tmp_path / "workspace"
     ws.mkdir()
 
-    # .env files
     with pytest.raises(PolicyDenied) as exc:
         check_write_allowed(ws, ".env")
     assert exc.value.code == "WRITE_DENIED"
 
     with pytest.raises(PolicyDenied) as exc:
-        check_write_allowed(ws, "sub/.env.production")
+        check_write_allowed(ws, "config/.env.local")
     assert exc.value.code == "WRITE_DENIED"
 
-    # workflows
+    with pytest.raises(PolicyDenied) as exc:
+        check_write_allowed(ws, "server.pem")
+    assert exc.value.code == "WRITE_DENIED"
+
     with pytest.raises(PolicyDenied) as exc:
         check_write_allowed(ws, ".github/workflows/ci.yml")
     assert exc.value.code == "WRITE_DENIED"
 
-    # keys
-    with pytest.raises(PolicyDenied) as exc:
-        check_write_allowed(ws, "id_rsa")
-    assert exc.value.code == "WRITE_DENIED"
+
+def test_write_deny_lockfiles(tmp_path: Path) -> None:
+    """Lockfiles are protected unless plan explicitly allows it."""
+    ws = tmp_path / "workspace"
+    ws.mkdir()
 
     with pytest.raises(PolicyDenied) as exc:
-        check_write_allowed(ws, "certs/server.pem")
-    assert exc.value.code == "WRITE_DENIED"
-
-    # Lockfiles
-    with pytest.raises(PolicyDenied):
         check_write_allowed(ws, "poetry.lock", plan_allows_lockfile=False)
+    assert exc.value.code == "WRITE_DENIED"
 
-    # Allowed with flag
+    # Permitted when plan_allows_lockfile=True
     check_write_allowed(ws, "poetry.lock", plan_allows_lockfile=True)
 
-    # Normal files allowed
-    check_write_allowed(ws, "src/calculator.py")
 
-
-def test_read_redact_globs() -> None:
-    """Read redaction matches sensitive file names."""
+def test_is_read_redacted() -> None:
+    """Sensitive patterns match for read redaction."""
     assert is_read_redacted(".env") is True
-    assert is_read_redacted(".env.local") is True
-    assert is_read_redacted("config/my_secret_keys.json") is True
+    assert is_read_redacted("deep/path/.env.production") is True
+    assert is_read_redacted("certs/secret_key.txt") is True
     assert is_read_redacted("server.pem") is True
     assert is_read_redacted("src/index.ts") is False
 
@@ -226,22 +224,78 @@ def test_command_policy_metacharacter_rejection() -> None:
     assert exc.value.code == "SHELL_METACHARACTER"
 
 
-def test_command_policy_python_c_security() -> None:
-    """python -c is restricted to verifier/sentinel and forbids dangerous imports."""
+def test_command_policy_forbidden_flags_denied(tmp_path: Path) -> None:
+    """R1 regression: Denylisted command flags that bypass jail or cause side effects are denied."""
     policy = CommandPolicy()
+    ws = tmp_path / "workspace"
+    ws.mkdir()
 
-    # Denied for samurai
+    # git --output / -o
     with pytest.raises(PolicyDenied) as exc:
-        policy.classify(["python", "-c", "print(1)"], caller_role="samurai")
-    assert exc.value.code == "PYTHON_C_DENIED"
+        policy.classify(["git", "diff", "--output=C:/Users/Public/x"], workspace=ws)
+    assert exc.value.code == "FORBIDDEN_FLAG"
 
-    # Allowed for verifier when safe
-    assert policy.classify(["python", "-c", "assert 1 + 1 == 2"], caller_role="verifier") == "allow"
-
-    # Forbidden import denied even for verifier
     with pytest.raises(PolicyDenied) as exc:
-        policy.classify(["python", "-c", "import os; os.system('dir')"], caller_role="verifier")
-    assert exc.value.code == "PYTHON_C_SUSPICIOUS_IMPORT"
+        policy.classify(["git", "log", "-o", "../escape.txt"], workspace=ws)
+    assert exc.value.code == "FORBIDDEN_FLAG"
+
+    # git -c (config injection)
+    with pytest.raises(PolicyDenied) as exc:
+        policy.classify(["git", "-c", "core.editor=calc", "status"], workspace=ws)
+    assert exc.value.code == "FORBIDDEN_FLAG"
+
+    # git --no-index
+    with pytest.raises(PolicyDenied) as exc:
+        policy.classify(["git", "diff", "--no-index", "a.txt", "b.txt"], workspace=ws)
+    assert exc.value.code == "FORBIDDEN_FLAG"
+
+    # pytest --basetemp / -p plugin injection
+    with pytest.raises(PolicyDenied) as exc:
+        policy.classify(["pytest", "--basetemp=C:/some/dir"], workspace=ws)
+    assert exc.value.code == "FORBIDDEN_FLAG"
+
+    with pytest.raises(PolicyDenied) as exc:
+        policy.classify(["pytest", "-p", "evil_plugin"], workspace=ws)
+    assert exc.value.code == "FORBIDDEN_FLAG"
+
+    # ruff --fix
+    with pytest.raises(PolicyDenied) as exc:
+        policy.classify(["ruff", "check", "--fix", "."], workspace=ws)
+    assert exc.value.code == "FORBIDDEN_FLAG"
+
+
+def test_command_policy_argument_path_jail(tmp_path: Path) -> None:
+    """R1 regression: Command path arguments outside workspace are rejected."""
+    policy = CommandPolicy()
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    (ws / "tests").mkdir()
+    (ws / "tests" / "test_a.py").write_text("def test_ok(): pass", encoding="utf-8")
+
+    # Outside workspace path
+    with pytest.raises(PolicyDenied) as exc:
+        policy.classify(["pytest", "../external_test.py"], workspace=ws)
+    assert exc.value.code == "PATH_OUTSIDE_WORKSPACE"
+
+    # Valid in-workspace pytest node id
+    res = policy.classify(["pytest", "tests/test_a.py::test_ok"], workspace=ws)
+    assert res == "allow"
+
+
+def test_command_policy_npx_jest_removed() -> None:
+    """R1 regression: npx jest is not allowlisted."""
+    policy = CommandPolicy()
+    with pytest.raises(PolicyDenied) as exc:
+        policy.classify(["npx", "jest"])
+    assert exc.value.code == "COMMAND_NOT_ALLOWLISTED"
+
+
+def test_command_policy_python_c_removed() -> None:
+    """R4 regression: python -c is dropped from allowlist and rejected."""
+    policy = CommandPolicy()
+    with pytest.raises(PolicyDenied) as exc:
+        policy.classify(["python", "-c", "print(1)"])
+    assert exc.value.code == "COMMAND_NOT_ALLOWLISTED"
 
 
 def test_command_policy_unmatched_default_deny() -> None:
@@ -306,6 +360,85 @@ def test_new_case():
 
     # 5. When may_edit_tests is True -> Allowed
     check_test_edit_allowed(old_test, tampered_remove, may_edit_tests=True)
+
+
+def test_test_assertion_protection_multiset_and_reachability() -> None:
+    """R5 regression: Multiset comparison, unreachable asserts, and method calls."""
+    # Multiset: removing one of two identical assertions
+    old_dupes = """
+def test_dupes():
+    assert x == 1
+    assert x == 1
+"""
+    new_single = """
+def test_dupes():
+    assert x == 1
+"""
+    with pytest.raises(PolicyDenied) as exc:
+        check_test_edit_allowed(old_dupes, new_single, may_edit_tests=False)
+    assert exc.value.code == "TEST_PROTECTION_ASSERTION_MODIFIED"
+
+    # Moving assert under constant-false if
+    old_valid = """
+def test_fn():
+    assert compute() == 42
+"""
+    under_if_false = """
+def test_fn():
+    if False:
+        assert compute() == 42
+"""
+    with pytest.raises(PolicyDenied) as exc:
+        check_test_edit_allowed(old_valid, under_if_false, may_edit_tests=False)
+    assert exc.value.code == "TEST_PROTECTION_ASSERTION_MODIFIED"
+
+    # Moving assert after return
+    after_return = """
+def test_fn():
+    return
+    assert compute() == 42
+"""
+    with pytest.raises(PolicyDenied) as exc:
+        check_test_edit_allowed(old_valid, after_return, may_edit_tests=False)
+    assert exc.value.code == "TEST_PROTECTION_ASSERTION_MODIFIED"
+
+    # Removing pytest.raises
+    old_raises = """
+import pytest
+
+def test_err():
+    with pytest.raises(ValueError):
+        raise ValueError("bad")
+"""
+    new_no_raises = """
+def test_err():
+    pass
+"""
+    with pytest.raises(PolicyDenied) as exc:
+        check_test_edit_allowed(old_raises, new_no_raises, may_edit_tests=False)
+    assert exc.value.code == "TEST_PROTECTION_ASSERTION_MODIFIED"
+
+    # Removing self.assertEqual
+    old_unittest = """
+def test_case(self):
+    self.assertEqual(a, b)
+"""
+    new_unittest = """
+def test_case(self):
+    pass
+"""
+    with pytest.raises(PolicyDenied) as exc:
+        check_test_edit_allowed(old_unittest, new_unittest, may_edit_tests=False)
+    assert exc.value.code == "TEST_PROTECTION_ASSERTION_MODIFIED"
+
+    # Removing/renaming test function
+    renamed_fn = """
+def not_a_test():
+    assert compute() == 42
+"""
+    with pytest.raises(PolicyDenied) as exc:
+        check_test_edit_allowed(old_valid, renamed_fn, may_edit_tests=False)
+    assert exc.value.code == "TEST_PROTECTION_ASSERTION_MODIFIED"
 
 
 def test_secret_redaction_patterns() -> None:

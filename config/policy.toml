@@ -15,12 +15,10 @@ patterns = [
   "npm test",
   "npm run test *",
   "npm run lint *",
-  "npx jest *",
   "git status *",
   "git diff *",
   "git log *",
   "git show *",
-  "python -c *",                 # ONLY when tool caller is Verifier/Sentinel; inspected for imports of os/subprocess/shutil
 ]
 
 [commands.ask]

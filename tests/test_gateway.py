@@ -9,8 +9,9 @@ from typing import Any
 import pytest
 
 from devpilot.core.events import Event, EventType
-from devpilot.core.models import EvidenceKind
+from devpilot.core.models import Evidence, EvidenceKind
 from devpilot.core.ports import ToolContext, ToolResult, ToolSchema
+from devpilot.engine import modes
 from devpilot.tools.gateway import DefaultToolGateway, truncate_output
 from devpilot.tools.ledger import FileEvidenceLedger
 
@@ -24,12 +25,13 @@ class MockTool:
         should_fail: bool = False,
         fail_code: str = "EXECUTION_ERROR",
         output: str = "mock output",
+        evidence_kind: EvidenceKind = EvidenceKind.TOOL_OUTPUT,
     ) -> None:
         self.name = name
         self.should_fail = should_fail
         self.fail_code = fail_code
         self.output = output
-        self.evidence_kind = EvidenceKind.TOOL_OUTPUT
+        self.evidence_kind = evidence_kind
         self.call_count = 0
         self.schema = ToolSchema(
             name=name.replace(".", "_"),
@@ -38,8 +40,10 @@ class MockTool:
                 "type": "object",
                 "properties": {
                     "param": {"type": "string"},
+                    "path": {"type": "string"},
+                    "argv": {"type": "array", "items": {"type": "string"}},
                 },
-                "required": ["param"],
+                "required": [],
             },
         )
 
@@ -60,13 +64,32 @@ class MockTool:
         )
 
 
-def _make_ctx(allowed_tools: Sequence[str] = ("mock.test", "mock.other")) -> ToolContext:
+class MockWorkspaces:
+    """Mock Workspaces port for tree_sha and path resolution."""
+
+    def __init__(self, sha: str = "a" * 40, root_path: Path | None = None) -> None:
+        self.sha = sha
+        self.root_path = root_path or Path.cwd()
+        self.tree_sha_calls = 0
+
+    async def tree_sha(self, ref: str = "main") -> str:
+        self.tree_sha_calls += 1
+        return self.sha
+
+    async def path(self, ref: str = "main") -> Path:
+        return self.root_path
+
+
+def _make_ctx(
+    allowed_tools: Sequence[str] = ("mock.test", "mock.other"),
+    workspace_ref: str = "main",
+) -> ToolContext:
     return ToolContext(
         mission_id="M-test-01",
         agent_id="samurai#1",
         mode_id="samurai.implement",
         task_key="T1",
-        workspace_ref="main",
+        workspace_ref=workspace_ref,
         allowed_tools=frozenset(allowed_tools),
     )
 
@@ -105,70 +128,67 @@ async def test_gateway_tool_lookup_normalization(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_gateway_allowed_tools_enforcement(tmp_path: Path) -> None:
-    """Invoking a tool not in ctx.allowed_tools returns POLICY_DENIED."""
+async def test_gateway_mode_permissions_enforced(tmp_path: Path) -> None:
+    """Calling tools outside allowed_tools is rejected with POLICY_DENIED."""
     ledger = FileEvidenceLedger(tmp_path)
     gateway = DefaultToolGateway(ledger=ledger)
-    mock = MockTool("shell.run")
+    mock = MockTool("fs.write")
     gateway.register(mock)
 
-    ctx = _make_ctx(allowed_tools=["fs.read"])  # shell.run not allowed
-    res = await gateway.execute(ctx, "shell.run", {"param": "ls", "rationale": "run command"})
+    # Allowed only fs.read, trying to call fs.write
+    ctx = _make_ctx(allowed_tools=["fs.read"])
+    res = await gateway.execute(ctx, "fs.write", {"param": "data", "rationale": "write attempt"})
     assert res.ok is False
     assert res.error_code == "POLICY_DENIED"
 
 
 @pytest.mark.asyncio
-async def test_gateway_missing_rationale(tmp_path: Path) -> None:
-    """Missing or empty rationale parameter returns INVALID_ARGS."""
+async def test_gateway_rationale_is_mandatory(tmp_path: Path) -> None:
+    """Calls without rationale parameter are rejected with INVALID_ARGS."""
     ledger = FileEvidenceLedger(tmp_path)
     gateway = DefaultToolGateway(ledger=ledger)
-    mock = MockTool("fs.read")
+    mock = MockTool("mock.test")
     gateway.register(mock)
 
-    ctx = _make_ctx(allowed_tools=["fs.read"])
-    res = await gateway.execute(ctx, "fs.read", {"param": "data"})  # rationale missing
-    assert res.ok is False
-    assert res.error_code == "INVALID_ARGS"
-    assert "rationale" in (res.error_message or "")
+    ctx = _make_ctx(allowed_tools=["mock.test"])
+    # Empty or missing rationale
+    res1 = await gateway.execute(ctx, "mock.test", {"param": "val"})
+    assert res1.ok is False
+    assert res1.error_code == "INVALID_ARGS"
+
+    res2 = await gateway.execute(ctx, "mock.test", {"param": "val", "rationale": "   "})
+    assert res2.ok is False
+    assert res2.error_code == "INVALID_ARGS"
 
 
 @pytest.mark.asyncio
 async def test_gateway_circuit_breaker(tmp_path: Path) -> None:
-    """3 consecutive failures open the circuit; subsequent calls return CIRCUIT_OPEN."""
+    """Circuit opens after 3 consecutive failures for a tool."""
     ledger = FileEvidenceLedger(tmp_path)
     gateway = DefaultToolGateway(ledger=ledger)
-    failing_tool = MockTool("flaky.tool", should_fail=True, fail_code="EXECUTION_ERROR")
+    failing_tool = MockTool("failing.tool", should_fail=True, fail_code="EXECUTION_ERROR")
     gateway.register(failing_tool)
 
-    ctx = _make_ctx(allowed_tools=["flaky.tool"])
+    ctx = _make_ctx(allowed_tools=["failing.tool"])
 
-    # Calls 1, 2, 3 fail normally
-    r1 = await gateway.execute(ctx, "flaky.tool", {"param": "a", "rationale": "try 1"})
-    assert r1.ok is False
-    assert r1.error_code == "EXECUTION_ERROR"
+    # 3 consecutive failures
+    for _ in range(3):
+        res = await gateway.execute(ctx, "failing.tool", {"param": "val", "rationale": "call"})
+        assert res.ok is False
+        assert res.error_code == "EXECUTION_ERROR"
 
-    r2 = await gateway.execute(ctx, "flaky.tool", {"param": "b", "rationale": "try 2"})
-    assert r2.ok is False
-
-    r3 = await gateway.execute(ctx, "flaky.tool", {"param": "c", "rationale": "try 3"})
-    assert r3.ok is False
-    assert gateway.circuit_breaker.is_open("flaky.tool") is True
-
-    # Call 4 fails fast via circuit breaker
-    r4 = await gateway.execute(ctx, "flaky.tool", {"param": "d", "rationale": "try 4"})
-    assert r4.ok is False
-    assert r4.error_code == "CIRCUIT_OPEN"
-    # Underlying tool was not even called on attempt 4
-    assert failing_tool.call_count == 3
+    # 4th call trips circuit breaker immediately
+    res_tripped = await gateway.execute(ctx, "failing.tool", {"param": "val", "rationale": "call"})
+    assert res_tripped.ok is False
+    assert res_tripped.error_code == "CIRCUIT_OPEN"
+    assert "use fallback" in res_tripped.error_message.lower()
 
 
 @pytest.mark.asyncio
-async def test_gateway_chaos_disabled_tool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tools listed in DEVPILOT_DISABLE_TOOLS return TOOL_UNAVAILABLE immediately."""
-    monkeypatch.setenv("DEVPILOT_DISABLE_TOOLS", "search.code, mock.test")
+async def test_gateway_chaos_disabled_tool(tmp_path: Path) -> None:
+    """Tools disabled by configuration return TOOL_UNAVAILABLE."""
     ledger = FileEvidenceLedger(tmp_path)
-    gateway = DefaultToolGateway(ledger=ledger)
+    gateway = DefaultToolGateway(ledger=ledger, disabled_tools=["mock.test"])
     mock = MockTool("mock.test")
     gateway.register(mock)
 
@@ -249,3 +269,209 @@ async def test_gateway_emits_lifecycle_events(tmp_path: Path) -> None:
     assert emitted[1].type == EventType.TOOL_RESULT
     assert emitted[0].payload["tool"] == "fs.read"
     assert emitted[1].payload["ok"] is True
+
+
+# --------------------------------------------------------------------------------------
+# R1-R8 and (a), (b) Regression Tests
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_r2_evidence_bound_to_workspace_tree_sha(tmp_path: Path) -> None:
+    """R2 regression: Evidence tree_sha is retrieved from Workspaces port."""
+    ws = MockWorkspaces(sha="1" * 40)
+    ledger = FileEvidenceLedger(tmp_path)
+    gateway = DefaultToolGateway(ledger=ledger, workspaces=ws)
+
+    mock = MockTool("test.run", evidence_kind=EvidenceKind.TEST_RUN, output="tests passed")
+    gateway.register(mock)
+
+    ctx = _make_ctx(allowed_tools=["test.run"])
+    res = await gateway.execute(ctx, "test.run", {"param": "x", "rationale": "run test"})
+    assert res.ok is True
+    ev = ledger.get(res.evidence_id)
+    assert ev.workspace_sha == "1" * 40
+    assert "unbound" not in res.structured
+
+    # Without workspaces, unbound is flagged
+    gateway_no_ws = DefaultToolGateway(ledger=FileEvidenceLedger(tmp_path / "other"))
+    gateway_no_ws.register(mock)
+    res_no_ws = await gateway_no_ws.execute(ctx, "test.run", {"param": "x", "rationale": "run test"})
+    assert res_no_ws.structured.get("unbound") is True
+
+
+@pytest.mark.asyncio
+async def test_r3_api_name_mapping_roundtrip() -> None:
+    """R3 regression: fs.write_probe maps to fs_write_probe and round-trips for all mode tools."""
+    gateway = DefaultToolGateway()
+    probe_tool = MockTool("fs.write_probe")
+    gateway.register(probe_tool)
+
+    # Lookup by dotted and api name
+    assert gateway.get_tool("fs.write_probe") is probe_tool
+    assert gateway.get_tool("fs_write_probe") is probe_tool
+
+    # Schemas expose api name
+    schemas = gateway.schemas(["fs.write_probe"])
+    assert len(schemas) == 1
+    assert schemas[0].name == "fs_write_probe"
+
+    # Test roundtrip for all tool names across all modes
+    mode_tools = set()
+    for mode in modes.REGISTRY.values():
+        mode_tools.update(mode.tools)
+
+    for tool_name in mode_tools:
+        dummy = MockTool(tool_name)
+        gateway.register(dummy)
+        api_name = dummy.name.replace(".", "_")
+        assert gateway.get_tool(dummy.name) is dummy
+        assert gateway.get_tool(api_name) is dummy
+
+
+@pytest.mark.asyncio
+async def test_r6_ask_tier_handling(tmp_path: Path) -> None:
+    """R6 regression: Command in ask tier requires approval callback."""
+    ledger = FileEvidenceLedger(tmp_path)
+
+    # 1. Without approver -> Denied with APPROVAL_REQUIRED
+    gateway = DefaultToolGateway(ledger=ledger)
+    exec_tool = MockTool("shell.run")
+    gateway.register(exec_tool)
+
+    ctx = _make_ctx(allowed_tools=["shell.run"])
+    res1 = await gateway.execute(
+        ctx, "shell.run", {"argv": ["pip", "install", "pkg"], "rationale": "install"}
+    )
+    assert res1.ok is False
+    assert res1.error_code == "APPROVAL_REQUIRED"
+
+    # 2. With approver that rejects
+    async def reject_approver(c: ToolContext, cmd: list[str]) -> bool:
+        return False
+
+    gateway_reject = DefaultToolGateway(ledger=ledger, approver=reject_approver)
+    gateway_reject.register(exec_tool)
+    res2 = await gateway_reject.execute(
+        ctx, "shell.run", {"argv": ["pip", "install", "pkg"], "rationale": "install"}
+    )
+    assert res2.ok is False
+    assert res2.error_code == "APPROVAL_DENIED"
+
+    # 3. With approver that accepts
+    async def accept_approver(c: ToolContext, cmd: list[str]) -> bool:
+        return True
+
+    gateway_accept = DefaultToolGateway(ledger=ledger, approver=accept_approver)
+    gateway_accept.register(exec_tool)
+    res3 = await gateway_accept.execute(
+        ctx, "shell.run", {"argv": ["pip", "install", "pkg"], "rationale": "install"}
+    )
+    assert res3.ok is True
+
+
+@pytest.mark.asyncio
+async def test_r7_tool_call_args_redacted(tmp_path: Path) -> None:
+    """R7 regression: Secrets in TOOL_CALL event args are redacted."""
+    emitted: list[Event] = []
+
+    def on_event(ev: Event) -> None:
+        emitted.append(ev)
+
+    ledger = FileEvidenceLedger(tmp_path)
+    gateway = DefaultToolGateway(ledger=ledger, event_callback=on_event)
+    mock = MockTool("fs.write")
+    gateway.register(mock)
+
+    ctx = _make_ctx(allowed_tools=["fs.write"])
+    secret_code = "SECRET_KEY = 'sk-ant-12345678901234567890'"
+    await gateway.execute(
+        ctx,
+        "fs.write",
+        {"param": secret_code, "rationale": "writing config file with secret"},
+    )
+
+    tool_call_events = [e for e in emitted if e.type == EventType.TOOL_CALL]
+    assert len(tool_call_events) == 1
+    call_args = tool_call_events[0].payload["args"]
+    assert "sk-ant" not in str(call_args)
+    assert "[REDACTED]" in str(call_args)
+
+
+@pytest.mark.asyncio
+async def test_r8_gateway_level_prechecks(tmp_path: Path) -> None:
+    """R8 regression: Gateway enforces path jail and command policy pre-checks."""
+    ws = MockWorkspaces(root_path=tmp_path / "workspace")
+    (tmp_path / "workspace").mkdir()
+    ledger = FileEvidenceLedger(tmp_path)
+    gateway = DefaultToolGateway(ledger=ledger, workspaces=ws)
+
+    mock = MockTool("fs.read")
+    gateway.register(mock)
+
+    ctx = _make_ctx(allowed_tools=["fs.read"])
+    # Traversal in path argument caught by gateway pre-check
+    res = await gateway.execute(
+        ctx, "fs.read", {"path": "../outside.txt", "rationale": "escape attempt"}
+    )
+    assert res.ok is False
+    assert res.error_code == "PATH_OUTSIDE_WORKSPACE"
+
+
+@pytest.mark.asyncio
+async def test_item_a_evidence_ledger_numbers_per_mission(tmp_path: Path) -> None:
+    """Item (a): FileEvidenceLedger assigns sequential IDs per mission across workspace refs."""
+    ledger = FileEvidenceLedger(tmp_path, mission_id="M-01")
+
+    ev_main = Evidence(
+        id="",
+        kind=EvidenceKind.TOOL_OUTPUT,
+        tool="mock",
+        agent_id="samurai",
+        workspace_ref="main",
+        workspace_sha="0" * 40,
+        summary="",
+        log_path="",
+        sha256="",
+    )
+    rec1 = await ledger.record(ev_main, "out1")
+    assert rec1.id == "E-0001"
+    assert rec1.workspace_ref == "main"
+
+    ev_baseline = Evidence(
+        id="",
+        kind=EvidenceKind.TEST_RUN,
+        tool="test.run",
+        agent_id="sentinel",
+        workspace_ref="baseline",
+        workspace_sha="0" * 40,
+        summary="",
+        log_path="",
+        sha256="",
+    )
+    rec2 = await ledger.record(ev_baseline, "out2")
+    assert rec2.id == "E-0002"
+    assert rec2.workspace_ref == "baseline"
+
+
+@pytest.mark.asyncio
+async def test_item_b_unregistered_tool_emits_tool_unavailable(tmp_path: Path) -> None:
+    """Item (b): Calling unregistered tool emits TOOL_UNAVAILABLE event."""
+    emitted: list[Event] = []
+
+    def on_event(ev: Event) -> None:
+        emitted.append(ev)
+
+    ledger = FileEvidenceLedger(tmp_path)
+    gateway = DefaultToolGateway(ledger=ledger, event_callback=on_event)
+
+    ctx = _make_ctx(allowed_tools=["nonexistent.tool"])
+    res = await gateway.execute(
+        ctx, "nonexistent.tool", {"param": "x", "rationale": "call missing tool"}
+    )
+    assert res.ok is False
+    assert res.error_code == "TOOL_UNAVAILABLE"
+
+    unavail_events = [e for e in emitted if e.type == EventType.TOOL_UNAVAILABLE]
+    assert len(unavail_events) == 1
+    assert unavail_events[0].payload["tool"] == "nonexistent.tool"

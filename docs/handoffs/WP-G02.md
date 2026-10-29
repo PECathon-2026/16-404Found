@@ -1,39 +1,43 @@
-# WP-G02 — Executor, Policy, Tool Gateway
+# WP-G02 — Executor, Policy, Tool Gateway (Review Fixes)
 **Status:** ready-for-review
-**Branch:** wp/g02-gateway-policy   **Commits:** 619854b
+**Branch:** wp/g02-gateway-policy
 
-## What I built
-- `devpilot/tools/executor_local.py`: `LocalExecutor` implementing `ports.Executor` protocol using `asyncio.create_subprocess_exec` (never shell), running in a scrubbed environment that strips secrets (`ANTHROPIC_API_KEY`, cloud keys), kills the process tree on timeout via `psutil`, and caps stdout/stderr at 5 MB.
-- `devpilot/tools/policy.py`:
-  - `resolve_in_workspace`: Filesystem path jail that resolves symlinks, `..`, UNC shares (`\\server\share`), and drive letters, strictly prohibiting workspace escape and `.git` access.
-  - Write-deny globs (`.git/**`, `.github/workflows/**`, `**/.env*`, `**/*.pem`, lockfiles unless permitted) and read-redaction checks.
-  - Command classifier (`CommandPolicy`): Three tiers (`allow`, `ask`, `deny`), metacharacter rejection (`;`, `&&`, `|`, `` ` ``, `$()`, etc.), first token normalization (stripping `.exe`), and `python -c` restricted to Verifier/Sentinel with forbidden import analysis.
-  - AST test protection (`check_test_edit_allowed`): Denies removing or modifying existing `assert` statements and forbids adding `skip`/`xfail` decorators without authorization, while permitting new tests.
-  - Secret redaction (`redact_secrets`, `redact_file_content`): Masks AWS keys, Anthropic keys, OpenAI keys, GitHub tokens, private keys, connection strings, and generic assignments.
-- `devpilot/tools/ledger.py`: `FileEvidenceLedger` implementing `ports.EvidenceLedger`, recording raw logs to `runs/<id>/evidence/E-XXXX.log` with sequential IDs and SHA256 cryptographic digests.
-- `devpilot/tools/gateway.py`: `DefaultToolGateway` implementing `ports.ToolGateway`. Implements the full pipeline: naming mapping (`.` <-> `_`), allowed tools check, chaos/disabled tools check (`DEVPILOT_DISABLE_TOOLS`), circuit breaker (tripping after 3 consecutive failures), schema validation (`jsonschema`) with injected required `rationale`, policy execution, output secret redaction, truncation (60 head + 140 tail), evidence persistence, and event emission.
-- Tests (32 tests):
-  - `tests/test_policy.py` (17 tests): Path jail (traversal, UNC, drive letters, symlink out, `.git`), write-deny, read-redact, command tiers, metacharacters, `python -c` guard, AST test assertion protection, secret redaction.
-  - `tests/test_executor.py` (5 tests): Subprocess execution, exit codes, stderr, scrubbed env, timeout killing, nonexistent binary handling.
-  - `tests/test_gateway.py` (10 tests): Tool normalization, schema rationale injection, least-privilege checks, circuit breaker, disabled tools, truncation, evidence integrity, lifecycle events.
+## What I built / Fixed
+Addressed all items from `docs/handoffs/WP-G02.review.md` (R1–R8) and follow-up items (a) and (b):
+
+- **R1 (Command arguments jail & forbidden flags)**:
+  - `CommandPolicy.classify(argv, caller_role, workspace)` now validates that path arguments resolve strictly inside the workspace. Node IDs like `tests/test_x.py::test_a` are split before resolution.
+  - Added denylist of forbidden flags: `--output`, `--no-index`, `--basetemp`, `--rootdir`, `--confcutdir`, `--fix`, `--unsafe-fixes`, `--pyargs`, `--exec-path`, `--git-dir`, `--work-tree`, `--cache-dir`, `-o` and `-c` on git, and `-p` on pytest.
+  - Removed `npx jest *` from allowlist.
+- **R2 (Evidence bound to workspace tree hash)**:
+  - `DefaultToolGateway` now accepts `workspaces: Workspaces | None`.
+  - For code-bound tools, `tree_sha` is read before and after execution; if changed, `workspace_changed_during_run` is recorded. If `workspaces` is None, `unbound: True` is flagged in structured output.
+- **R3 (API name mapping roundtrip)**:
+  - Replaced ad-hoc string replacement with explicit bidirectional mapping (`_api_to_dotted` and `_dotted_to_api`), seeded with all tools from `modes.REGISTRY`. `fs.write_probe` maps reliably to `fs_write_probe` and round-trips.
+- **R4 (Dropped `python -c`)**:
+  - Removed `python -c *` from `DEFAULT_ALLOW_PATTERNS` and `config/policy.toml`.
+- **R5 (Test protection gaps)**:
+  - Implemented multiset comparison (`collections.Counter`) to prevent removing duplicated asserts.
+  - Implemented reachability analysis: assertions placed after `return`/`raise` or nested in statically `False` branches (`if False:`) are treated as removed.
+  - Counted `pytest.raises`, `self.assertRaises`, and `self.assert*` method calls as assertions.
+  - Tracked test function definitions; removing or renaming existing `test_*` functions is blocked.
+- **R6 (`ask` tier approver callback)**:
+  - Added `approver: Callable[[ToolContext, list[str]], Awaitable[bool]] | None` to `DefaultToolGateway`. Without approver, `ask` commands raise `APPROVAL_REQUIRED`; if rejected by approver, `APPROVAL_DENIED` is returned.
+- **R7 (Secret redaction in TOOL_CALL arguments)**:
+  - Arguments in `TOOL_CALL` events are now sanitized with `redact_secrets`.
+- **R8 (Gateway-level defense-in-depth pre-checks)**:
+  - `DefaultToolGateway.execute` runs path-jail and command-policy pre-checks on `path`, `paths`, `selector`, `selectors`, `argv`, and `command` before tool execution.
+- **Item (a) (FileEvidenceLedger per-mission numbering)**:
+  - `FileEvidenceLedger` now sequences IDs (`E-0001`, `E-0002`, ...) per mission across all `workspace_ref` values, and files logs in `runs/<mission_id>/evidence/`.
+  - Simplified `MissionEvidenceLedger` in `devpilot/wiring.py` to subclass `FileEvidenceLedger` directly.
+- **Item (b) (Unregistered tool event)**:
+  - `DefaultToolGateway.execute` emits `EventType.TOOL_UNAVAILABLE` when a tool is not registered.
 
 ## How to verify
 ```bash
-pytest tests/test_policy.py tests/test_executor.py tests/test_gateway.py -q
-# 32 passed in 2.30s
+python -m pytest -q tests/test_policy.py tests/test_gateway.py tests/test_executor.py
+# 44 passed
 
-ruff check .
+python -m ruff check .
 # All checks passed!
-
-mypy devpilot/core devpilot/config.py devpilot/tools tests
-# Success: no issues found in 14 source files
 ```
-
-## Deviations from spec
-- None.
-
-## Contract change requests
-- None.
-
-## Known gaps / follow-ups
-- Individual concrete tool implementations (`fs.read`, `fs.edit`, `search.code`, etc.) are scheduled for WP-G04 and will register directly into `DefaultToolGateway`.

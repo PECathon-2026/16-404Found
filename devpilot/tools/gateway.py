@@ -4,32 +4,48 @@ Implements `ports.ToolGateway`. Every tool call passes through:
 1. Tool naming mapping (API name `_` <-> internal `.`).
 2. Mode permissions check (`ctx.allowed_tools`).
 3. Chaos / tool disable check (`DEVPILOT_DISABLE_TOOLS`).
-4. Required `rationale` presence verification.
+4. Mandatory rationale presence verification.
 5. Circuit breaker evaluation (trips after 3 consecutive failures).
-6. Schema validation (`jsonschema`).
-7. Execution policy check (path jail, command tier, metacharacters).
-8. Execution via tool implementation or executor.
-9. Secret redaction on all outputs (regex set from docs/07 §3).
-10. Truncation for long outputs (first 60 + last 140 lines).
-11. Recording in `FileEvidenceLedger` to produce verifiable SHA256 evidence.
-12. Event dispatch (`TOOL_CALL`, `TOOL_RESULT`, `POLICY_DENIED`, `TOOL_UNAVAILABLE`, `CIRCUIT_OPENED`).
+6. Tool registration check (emits TOOL_UNAVAILABLE if missing).
+7. Schema validation (`jsonschema`).
+8. Execution pre-checks (path jail, command tier & forbidden flags).
+9. Execution via tool implementation or executor with workspace tree_sha tracking.
+10. Secret redaction on all outputs (and TOOL_CALL arguments).
+11. Truncation for long outputs (first 60 + last 140 lines).
+12. Recording in `FileEvidenceLedger` to produce verifiable SHA256 evidence.
+13. Event dispatch (`TOOL_CALL`, `TOOL_RESULT`, `POLICY_DENIED`, `TOOL_UNAVAILABLE`, `CIRCUIT_OPENED`).
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
-from collections.abc import Callable, Sequence
+import shlex
+from collections.abc import Awaitable, Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 import jsonschema  # type: ignore[import-untyped]
 
 from devpilot.core.events import Event, EventType
-from devpilot.core.models import Evidence
-from devpilot.core.ports import EvidenceLedger, Tool, ToolContext, ToolResult, ToolSchema
+from devpilot.core.models import Evidence, EvidenceKind
+from devpilot.core.ports import EvidenceLedger, Tool, ToolContext, ToolResult, ToolSchema, Workspaces
 from devpilot.tools.ledger import FileEvidenceLedger
-from devpilot.tools.policy import PolicyDenied, redact_secrets
+from devpilot.tools.policy import CommandPolicy, PolicyDenied, redact_secrets, resolve_in_workspace
 
 EventCallback = Callable[[Event], Any]
+
+CODE_BOUND_KINDS: frozenset[EvidenceKind] = frozenset(
+    {
+        EvidenceKind.TEST_RUN,
+        EvidenceKind.PROBE_RUN,
+        EvidenceKind.PROPERTY_RUN,
+        EvidenceKind.DIFFERENTIAL_RUN,
+        EvidenceKind.MUTATION_RUN,
+        EvidenceKind.COVERAGE,
+        EvidenceKind.DIFF,
+    }
+)
 
 
 class CircuitBreaker:
@@ -74,6 +90,17 @@ def truncate_output(text: str, head_lines: int = 60, tail_lines: int = 140) -> t
     return "".join(kept), True
 
 
+def _redact_value(val: Any) -> Any:
+    """Recursively redact secrets in strings within nested structures."""
+    if isinstance(val, str):
+        return redact_secrets(val)
+    if isinstance(val, dict):
+        return {k: _redact_value(v) for k, v in val.items()}
+    if isinstance(val, list):
+        return [_redact_value(x) for x in val]
+    return val
+
+
 class DefaultToolGateway:
     """Tool execution gateway enforcing permissions, policy, and logging."""
 
@@ -82,26 +109,46 @@ class DefaultToolGateway:
         ledger: EvidenceLedger | None = None,
         event_callback: EventCallback | None = None,
         disabled_tools: Sequence[str] = (),
+        workspaces: Workspaces | None = None,
+        approver: Callable[[ToolContext, list[str]], Awaitable[bool]] | None = None,
+        policy: CommandPolicy | None = None,
     ) -> None:
         self.ledger: EvidenceLedger = ledger or FileEvidenceLedger()
         self.event_callback = event_callback
         self.circuit_breaker = CircuitBreaker(threshold=3)
+        self.workspaces = workspaces
+        self.approver = approver
+        self.policy = policy or CommandPolicy()
         self._tools: dict[str, Tool] = {}
+        self._api_to_dotted: dict[str, str] = {}
+        self._dotted_to_api: dict[str, str] = {}
+        from devpilot.engine import modes
+        for mode in modes.REGISTRY.values():
+            for t in mode.tools:
+                api = t.replace(".", "_")
+                self._api_to_dotted[api] = t
+                self._dotted_to_api[t] = api
         self._disabled_tools = set(disabled_tools)
 
     def register(self, tool: Tool) -> None:
         """Register a tool implementation under its dotted name and underscore name."""
-        dotted = tool.name.replace("_", ".")
-        underscore = tool.name.replace(".", "_")
+        dotted = tool.name
+        api_name = tool.name.replace(".", "_")
         self._tools[dotted] = tool
-        self._tools[underscore] = tool
+        self._tools[api_name] = tool
+        self._dotted_to_api[dotted] = api_name
+        self._api_to_dotted[api_name] = dotted
 
     def get_tool(self, name: str) -> Tool | None:
         """Look up tool by dotted or underscore name."""
-        return self._tools.get(name) or self._tools.get(name.replace("_", ".")) or self._tools.get(name.replace(".", "_"))
+        if name in self._api_to_dotted:
+            return self._tools.get(self._api_to_dotted[name])
+        return self._tools.get(name)
 
     def _normalize_name(self, name: str) -> str:
         """Return canonical dotted internal name."""
+        if name in self._api_to_dotted:
+            return self._api_to_dotted[name]
         return name.replace("_", ".")
 
     def _is_disabled(self, name: str) -> bool:
@@ -159,7 +206,7 @@ class DefaultToolGateway:
             input_schema["properties"] = props
             input_schema["required"] = required
 
-            api_name = orig_schema.name.replace(".", "_")
+            api_name = self._dotted_to_api.get(tool.name, tool.name.replace(".", "_"))
             schemas_list.append(
                 ToolSchema(
                     name=api_name,
@@ -230,9 +277,16 @@ class DefaultToolGateway:
                 error_message="Missing required parameter: 'rationale'",
             )
 
-        # 5. Tool lookup
+        # 5. Tool lookup (b: emit TOOL_UNAVAILABLE when missing)
         tool = self.get_tool(dotted_name)
         if not tool:
+            self._emit(
+                EventType.TOOL_UNAVAILABLE,
+                ctx,
+                actor,
+                {"tool": dotted_name, "reason": f"Tool {dotted_name!r} is not registered in gateway"},
+                f"Tool {dotted_name} unavailable",
+            )
             return ToolResult(
                 ok=False,
                 tool=dotted_name,
@@ -243,7 +297,6 @@ class DefaultToolGateway:
 
         # 6. Schema validation
         try:
-            # Validate against original schema + rationale
             schema_props = dict(tool.schema.input_schema.get("properties", {}))
             schema_props["rationale"] = {"type": "string"}
             schema_req = list(tool.schema.input_schema.get("required", []))
@@ -264,16 +317,88 @@ class DefaultToolGateway:
                 error_message=f"Schema validation error: {err.message}",
             )
 
-        # Emit TOOL_CALL event
+        # 7. Gateway-level pre-checks for paths and command arguments (R8)
+        ws_path: Path
+        if self.workspaces is not None:
+            try:
+                ws_path = await self.workspaces.path(ctx.workspace_ref)
+            except Exception:
+                ws_path = Path.cwd()
+        else:
+            ws_path = Path.cwd()
+
+        try:
+            if "path" in args and isinstance(args["path"], str):
+                resolve_in_workspace(ws_path, args["path"])
+            if "paths" in args and isinstance(args["paths"], list):
+                for p in args["paths"]:
+                    if isinstance(p, str):
+                        resolve_in_workspace(ws_path, p)
+            if "selector" in args or "selectors" in args:
+                sels = args.get("selector") or args.get("selectors")
+                if isinstance(sels, str):
+                    sels = [sels]
+                if isinstance(sels, list):
+                    for s in sels:
+                        if isinstance(s, str):
+                            candidate = s.split("::", 1)[0]
+                            if "/" in candidate or "\\" in candidate or candidate.endswith(".py"):
+                                resolve_in_workspace(ws_path, candidate)
+            if "argv" in args or "command" in args:
+                cmd = args.get("argv") or args.get("command")
+                if isinstance(cmd, str):
+                    cmd = shlex.split(cmd)
+                if isinstance(cmd, list) and cmd:
+                    cls = self.policy.classify(cmd, caller_role=ctx.mode_id, workspace=ws_path)
+                    if cls == "ask":
+                        if self.approver is not None:
+                            approved = await self.approver(ctx, cmd)
+                            if not approved:
+                                return ToolResult(
+                                    ok=False,
+                                    tool=dotted_name,
+                                    output="",
+                                    error_code="APPROVAL_DENIED",
+                                    error_message=f"Command approval was rejected for {cmd[0]}",
+                                )
+                        else:
+                            raise PolicyDenied(
+                                "APPROVAL_REQUIRED",
+                                f"Command requires approval but no approver is configured: {' '.join(cmd)}",
+                            )
+        except PolicyDenied as pd:
+            self._emit(
+                EventType.POLICY_DENIED,
+                ctx,
+                actor,
+                {"tool": dotted_name, "code": pd.code, "message": pd.message},
+                f"Policy denied on {dotted_name}: {pd.message}",
+            )
+            return ToolResult(
+                ok=False,
+                tool=dotted_name,
+                output="",
+                error_code=pd.code,
+                error_message=pd.message,
+            )
+
+        # 8. Emit TOOL_CALL event with secrets redacted in args (R7)
+        redacted_args = _redact_value(args)
         self._emit(
             EventType.TOOL_CALL,
             ctx,
             actor,
-            {"tool": dotted_name, "args": args, "rationale": rationale},
+            {"tool": dotted_name, "args": redacted_args, "rationale": rationale},
             f"Call {dotted_name}: {rationale}",
         )
 
-        # 7. Execute tool and catch policy exceptions or runtime errors
+        # 9. Workspace tree_sha before execution (R2)
+        tree_sha_before = "0" * 40
+        if self.workspaces is not None:
+            with contextlib.suppress(Exception):
+                tree_sha_before = await self.workspaces.tree_sha(ctx.workspace_ref)
+
+        # 10. Execute tool and catch policy exceptions or runtime errors
         try:
             raw_result = await tool.run(ctx, args)
         except PolicyDenied as pd:
@@ -326,7 +451,7 @@ class DefaultToolGateway:
                 error_message=str(exc),
             )
 
-        # If execution succeeded, reset circuit breaker; otherwise record failure
+        # Reset or update circuit breaker
         if raw_result.ok:
             self.circuit_breaker.record_success(dotted_name)
         else:
@@ -341,21 +466,33 @@ class DefaultToolGateway:
                         f"Circuit opened for {dotted_name}",
                     )
 
-        # 8. Secret Redaction
+        # 11. Workspace tree_sha after execution (R2)
+        tree_sha_after = tree_sha_before
+        if self.workspaces is not None:
+            with contextlib.suppress(Exception):
+                tree_sha_after = await self.workspaces.tree_sha(ctx.workspace_ref)
+                if tree_sha_after != tree_sha_before:
+                    raw_result.structured["workspace_changed_during_run"] = True
+        else:
+            raw_result.structured["unbound"] = True
+
+        workspace_sha = tree_sha_after
+
+        # 12. Secret Redaction
         sanitized_output = redact_secrets(raw_result.output)
 
-        # 9. Truncation
+        # 13. Truncation
         truncated_output, is_truncated = truncate_output(sanitized_output)
 
-        # 10. Evidence Ledger Record
+        # 14. Evidence Ledger Record
         evidence_draft = Evidence(
-            id="E-0000",  # Will be assigned by ledger
+            id="E-0000",
             kind=tool.evidence_kind,
             tool=dotted_name,
             agent_id=actor,
             mode_id=ctx.mode_id,
             workspace_ref=ctx.workspace_ref,
-            workspace_sha="0" * 40,
+            workspace_sha=workspace_sha,
             summary=f"Tool {dotted_name} executed with status ok={raw_result.ok}",
             log_path="",
             sha256="",
@@ -364,7 +501,7 @@ class DefaultToolGateway:
 
         saved_evidence = await self.ledger.record(evidence_draft, sanitized_output)
 
-        # 11. Emit TOOL_RESULT event
+        # 15. Emit TOOL_RESULT event
         self._emit(
             EventType.TOOL_RESULT,
             ctx,

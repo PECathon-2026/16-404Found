@@ -25,7 +25,7 @@ from typing import Any, Literal, cast
 
 from devpilot.config import Settings
 from devpilot.core.events import Event, EventType
-from devpilot.core.models import BudgetState, Evidence, MemoryItem, Mission, Reflection
+from devpilot.core.models import BudgetState, MemoryItem, Mission, Reflection
 from devpilot.core.ports import (
     AgentRuntime,
     Blackboard,
@@ -244,36 +244,11 @@ class UnavailableTestRunner:
         raise ComponentUnavailableError("test runner is not available (WP-G05)")
 
 
-class MissionEvidenceLedger:
-    """One evidence-id sequence per mission over :class:`FileEvidenceLedger`.
-
-    The file ledger numbers (and keys) evidence by ``workspace_ref``, so ``main`` and ``baseline``
-    would both mint ``E-0001``. Here every record is filed under the mission, giving
-    ``runs/<id>/evidence/E-NNNN.log`` with mission-wide unique ids; ``Evidence.workspace_ref`` keeps
-    its real value.
-    """
+class MissionEvidenceLedger(FileEvidenceLedger):
+    """Evidence ledger configured per mission directory."""
 
     def __init__(self, runs_dir: Path, mission_id: str) -> None:
-        self._mission_id = mission_id
-        self._inner = FileEvidenceLedger(runs_dir)
-        self._records: dict[str, Evidence] = {}
-
-    async def record(self, ev: Evidence, raw_output: str) -> Evidence:
-        stored = await self._inner.record(
-            ev.model_copy(update={"workspace_ref": self._mission_id}), raw_output
-        )
-        final = stored.model_copy(update={"workspace_ref": ev.workspace_ref})
-        self._records[final.id] = final
-        return final
-
-    def get(self, evidence_id: str) -> Evidence:
-        try:
-            return self._records[evidence_id]
-        except KeyError:
-            raise KeyError(f"Evidence record {evidence_id!r} not found in ledger") from None
-
-    def exists(self, evidence_id: str) -> bool:
-        return evidence_id in self._records
+        super().__init__(root_dir=runs_dir, mission_id=mission_id)
 
 
 class RecallingMemory:
