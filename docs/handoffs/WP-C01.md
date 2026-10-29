@@ -11,7 +11,7 @@
 
 ## How to verify
 ```
-python -m pytest -q tests/state   -> 102 passed
+python -m pytest -q tests/state   -> 95 passed
 python -m pytest -q               -> 102 passed
 python -m ruff check devpilot/state tests/state  -> All checks passed
 python -m mypy devpilot/state     -> Success: no issues found in 4 source files
