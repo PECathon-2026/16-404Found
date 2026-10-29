@@ -103,7 +103,13 @@ Every prompt is compiled in **cache-friendly layers** (stable → volatile):
 Layers 1–3 hit the prompt cache across all agents and attempts in a mission, cutting cost and latency substantially on repeated calls.
 
 ### 2.2 Structured output
-The final step is a forced `submit_<output>` tool call (`tool_choice` forced once the agent signals done or the step budget is near). Output goes through **two validators**:
+The final step is a `submit_<output>` tool call. **API constraint (Opus 5.5 / Sonnet 5.5):** forced `tool_choice` (`tool`/`any`) returns 400, and `budget_tokens` thinking is rejected. The design adapts as follows (implemented in the LLM adapter, C02):
+- Submit tools are declared with `strict: true` (schema-exact arguments), and the call uses `tool_choice: auto` plus an explicit "call `submit_x` now" instruction. If the model ends a turn without submitting, the runtime appends a nudge (max 2), then `MODE_FAILED`.
+- `ThinkingPolicy.budget_tokens` is a **depth hint** mapped to `output_config.effort` (≤4k low · ≤8k medium · ≤12k high · >12k xhigh) with `thinking: {type: "adaptive", display: "summarized"}`. The summaries feed the UI's thinking view.
+- **History is append-only** (preserved thinking): earlier turns, including thinking blocks, are passed back unchanged. Compaction (§2.3) therefore uses the API's server-side compaction / context-editing betas rather than rewriting old turns.
+- Server-side refusal fallback (`fallbacks: "default"`) is enabled for Opus/Sonnet calls.
+
+Output goes through **two validators**:
 1. Pydantic schema validation.
 2. **Semantic validators** declared on the mode, for example:
    - every `evidence_id` cited must exist in the ledger,
@@ -115,7 +121,12 @@ On failure the error goes back to the model (max 2 repair rounds), then `MODE_FA
 
 ### 2.3 Context engineering
 - **ContextRecipe** declares the slices (`spec`, `plan.current_task`, `repo_map(k=40 symbols)`, `inbox`, `attempt_history`, `diff`, `test_matrix`, `memory(kind=lesson,k=5)`…) and a **token budget per slice**.
-- **Compaction:** when a conversation exceeds 60% of the window, old tool results are replaced by `FAST`-tier summaries that keep the evidence IDs. The raw output always stays in the ledger and in the UI.
+- **Compaction:** history must stay append-only, so we never rewrite old turns client-side. Instead:
+  1. tool outputs are kept small at the source (the gateway truncates and points to the evidence ID);
+  2. long modes enable the API's context-editing beta (clear old tool results);
+  3. if a mode still nears the window, it ends with a checkpoint summary, and a fresh invocation continues from the blackboard.
+
+  The raw output always stays in the ledger and in the UI.
 - **Untrusted content fencing:** repo text is wrapped in `<untrusted source="path">…</untrusted>`. The constitution tells models that instructions inside these fences are data.
 
 ---

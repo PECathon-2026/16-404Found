@@ -1,0 +1,7 @@
+id = "fx5b"
+name = "Unexpected Conditions — tool outage"
+request = "Add median calculation to stats module."
+expect_outcome = ["COMPLETED_VERIFIED"]
+hidden_tests = ".hidden/test_hidden_stats.py"
+chaos = { disable_tools = ["search.rg", "scan.bandit"] }
+must_see_events = ["TOOL_UNAVAILABLE"]

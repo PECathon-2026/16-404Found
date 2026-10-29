@@ -46,7 +46,7 @@ packages = ["devpilot"]
 [tool.ruff]
 line-length = 110
 target-version = "py311"
-extend-exclude = ["fixtures", "runs", "web"]
+extend-exclude = ["fixtures", "runs", "web", ".claude"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]

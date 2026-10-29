@@ -1,0 +1,7 @@
+id = "fx3"
+name = "Test-Driven Recovery — textstats"
+request = "CI is red on main. Make the test suite pass without changing what the tests check."
+expect_outcome = ["COMPLETED_VERIFIED"]
+hidden_tests = ".hidden/test_hidden_textstats.py"
+chaos = {}
+must_see_events = ["TEST_RUN", "FINDING", "DECISION"]

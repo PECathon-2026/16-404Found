@@ -41,6 +41,9 @@ nosetests.xml
 coverage.xml
 *.cov.json
 
+# Claude agent internal worktrees
+.claude/
+
 # OS and IDE files
 .DS_Store
 Thumbs.db

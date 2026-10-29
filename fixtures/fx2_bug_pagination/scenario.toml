@@ -1,0 +1,7 @@
+id = "fx2"
+name = "Bug Investigation — pagination"
+request = "Users report the last page of search results is sometimes missing items. Please fix it."
+expect_outcome = ["COMPLETED_VERIFIED"]
+hidden_tests = ".hidden/test_hidden_pager.py"
+chaos = {}
+must_see_events = ["TEST_RUN", "FINDING", "DECISION"]

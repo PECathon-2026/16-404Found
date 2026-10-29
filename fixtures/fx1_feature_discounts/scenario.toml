@@ -1,0 +1,7 @@
+id = "fx1"
+name = "Feature Implementation — discount codes"
+request = "Add support for discount codes: SAVE10 gives 10% off, FLAT5 gives $5 off orders over $20. Existing totals must not change."
+expect_outcome = ["COMPLETED_VERIFIED"]
+hidden_tests = ".hidden/test_hidden_cart.py"
+chaos = {}
+must_see_events = ["TEST_RUN", "FINDING", "DECISION"]
