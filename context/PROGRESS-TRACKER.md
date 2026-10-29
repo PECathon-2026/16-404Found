@@ -244,3 +244,22 @@ Check an item only with evidence (path or link). All currently unchecked.
 - Keep four states separate in all reporting: **planned** (in PLAN.md) · **implemented** (code exists) · **tested** (tests executed, results recorded) · **verified** (acceptance criteria demonstrated, evidence attached).
 - Model claims, agent self-reports and "should work" statements are never evidence.
 - A skipped or unavailable test is reported as `SKIPPED`/`NOT RUN`, never `PASSED`.
+
+## Implementation status (updated after the first build session)
+
+Verified by actually running: `pytest` 115 passed, `ruff` clean, `tsc`/`eslint` clean, `next build` OK, plus a headless-browser pass of the full demo flow (create → run → approve → report; 375px and 1440px).
+
+| Area | Status | Evidence / caveat |
+|---|---|---|
+| Phase 0–1 (schemas, DB, API, SSE, state manager, LLM layer) | VERIFIED | tests; SQLite only, no Alembic, no `users` table |
+| Phase 2 tools, policy, path jail, scanners, tamper detector | VERIFIED | 50+ policy cases, jail/escape tests. **T2.04 Docker runner NOT STARTED**; local-jail only |
+| Phase 3 LangGraph, master, watchdog, planner, interrupts | VERIFIED | e2e SC-3. **T3.08 replan path implemented but untested** |
+| Phase 4–5 developer/tester/security, critique loop, EXECUTE re-run | VERIFIED (scripted model) | live-model behaviour UNTESTED; T5.06 parallel devs, T5.07 memory NOT STARTED |
+| Phase 6 verifier process, gate, approval, report, rollback | VERIFIED | isolation + sabotage tests |
+| GitHub import + branch/commit/push/PR | VERIFIED for clone/branch/push against a local bare remote; PR API + real github.com NOT TESTED | token via env header (unit-tested) |
+| Phase 7 frontend | IMPLEMENTED + browser-checked | no Monaco (custom unified diff), no replay/Playwright tests committed |
+| Phase 8 scenarios | PARTIAL | only SC-3 fixture + test; SC-1/2/4/5/6/7 fixtures and harness NOT STARTED |
+| T9.* | README written; compose/demo recording NOT STARTED |
+
+Bugs found by running (all have regression tests): stale `.pyc` after same-size edits (compileall), git `index.lock` race between parallel tester/security, symlinked data dir crash, relative data dir breaking `--junitxml`, `/etc` import guard bypass on macOS, developer self-checks counted as gate evidence.
+Deviations from the blueprint: master uses a deterministic policy (LLM optional, guarded); tester/security are tool-driven without an LLM by design; `forced_by` gained `POLICY`; gate allows INCONCLUSIVE (manual-review) criteria only with explicit human acknowledgement.

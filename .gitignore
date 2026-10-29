@@ -1,0 +1,13 @@
+backend/.venv/
+backend/data/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+runs/
+frontend/.next/
+frontend/node_modules/
+.DS_Store
