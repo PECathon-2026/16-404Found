@@ -64,6 +64,8 @@ def _align_mission(mode_id: str, mission: m.Mission, example: dict[str, Any]) ->
         mission.acs = [m.ACState(ac=m.AcceptanceCriterion(
             id=v["ac_id"], given="g", when="w", then="t", verification_methods=["probe"],
             preserves_existing_behaviour=(i == 0))) for i, v in enumerate(example["per_ac"])]
+        if mission.spec is not None:  # the spec is the source of truth for AC ids
+            mission.spec.acceptance_criteria = [s.ac for s in mission.acs]
     if mode_id == "sentinel.triage":
         cases = [m.TestCaseResult(nodeid=item["nodeid"], outcome=m.TestOutcome.FAILED,
                                   baseline_outcome=m.TestOutcome.PASSED, classification=m.TestClass.NEW_FAIL,
