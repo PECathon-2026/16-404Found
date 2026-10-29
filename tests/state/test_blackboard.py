@@ -11,6 +11,7 @@ from devpilot.core.events import EventType
 from devpilot.core.models import HumanPrompt, MissionStatus, TaskStatus
 from devpilot.state.blackboard import EventSourcedBlackboard, OwnershipError
 from devpilot.state.event_store import JsonlEventStore
+from devpilot.state.projector import ProjectionError
 
 
 async def test_create_emits_mission_created(store: JsonlEventStore) -> None:
@@ -147,3 +148,36 @@ async def test_snapshot_rejects_seq_zero(store: JsonlEventStore) -> None:
     await _drive(bb, 1)
     with pytest.raises(ValueError):
         bb.snapshot(at_seq=0)
+
+
+_BAD_PAYLOADS: list[tuple[EventType, str, dict[str, object]]] = [
+    (EventType.TASK_STATE_CHANGED, "system", {"task_key": "T404", "to": "DONE"}),
+    (EventType.AC_STATUS_CHANGED, "system", {"ac_id": "AC-404", "status": "VERIFIED", "evidence_ids": []}),
+    (EventType.DECISION, "system", {"submission_id": "S-404", "final_action": "CONTINUE"}),
+    (EventType.HUMAN_DECISION, "human", {"decision": {"id": "HD-1", "prompt_id": "P-404"}}),
+    (EventType.STATE_CHANGED, "system", {"from": "CREATED", "to": "NOT_A_STATUS", "reason": ""}),
+    (EventType.LLM_TURN, "master", {"usage": {"bogus": 1}}),
+    (EventType.FINDING, "security", {}),
+    (EventType.SUBMISSION, "master", {"submission": {"id": "S-x"}}),
+]
+
+
+@pytest.mark.parametrize(("type_", "actor", "payload"), _BAD_PAYLOADS)
+async def test_invalid_payload_is_rejected_before_persist(
+    store: JsonlEventStore, type_: EventType, actor: str, payload: dict[str, object]
+) -> None:
+    bb = await EventSourcedBlackboard.create(store, make_mission())
+    await _drive(bb, 2)
+    path = store.path_for(MID)
+    before_bytes = path.read_bytes()
+    before_state = bb.mission.model_dump()
+
+    with pytest.raises(ProjectionError):
+        await bb.emit(type_, actor, payload)
+
+    assert path.read_bytes() == before_bytes
+    assert bb.mission.model_dump() == before_state
+    loaded = await EventSourcedBlackboard.load(store, MID)
+    assert loaded.mission.model_dump() == before_state
+    nxt = await bb.emit(EventType.TOOL_CALL, "samurai#1", {})
+    assert nxt.seq == before_state["last_seq"] + 1

@@ -11,8 +11,8 @@
 
 ## How to verify
 ```
-python -m pytest -q tests/state   -> 77 passed
-python -m pytest -q               -> 84 passed
+python -m pytest -q tests/state   -> 102 passed
+python -m pytest -q               -> 102 passed
 python -m ruff check devpilot/state tests/state  -> All checks passed
 python -m mypy devpilot/state     -> Success: no issues found in 4 source files
 ```
@@ -30,7 +30,8 @@ python -m mypy devpilot/state     -> Success: no issues found in 4 source files
 - `Blackboard.emit(..., **kw: Any)` could list the explicit keyword-only parameters.
 
 ## Known gaps
-- `emit` persists before projecting; a payload that fails projection leaves a poisoned event in the log (replay would raise `ProjectionError`). Producers must send valid payloads; no dry-run validation is done to avoid deep-copying the mission per emit.
+- (Fixed in review round 1) `emit` now validates before persisting: `projector.prepare(mission, event)` parses the payload and checks references without mutating, returning a closure `Callable[[Event], None]` that is run with the stored event after `store.append`. `apply` is `prepare(...)(event)` for replay. Invalid payloads raise `ProjectionError` and nothing is written.
+- (Fixed in review round 1) `JsonlEventStore.path_for` rejects mission ids not matching `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` or containing `..` with `ValueError` (also applied by append/read/subscribe).
 - `snapshot(at_seq)` reads the whole events file synchronously (cheap slicing, but O(file size) bytes).
 - Event store opens/closes the file per append (simple and crash-safe, not maximum throughput).
 - `Event.mission_id` casing/characters are not sanitised for use as a directory name; the API layer should validate ids.

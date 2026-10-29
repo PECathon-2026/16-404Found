@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,6 +25,7 @@ log = logging.getLogger(__name__)
 
 EVENTS_FILENAME = "events.jsonl"
 DEFAULT_QUEUE_SIZE = 10_000
+_MISSION_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
 class SubscriberLagged(Exception):
@@ -107,6 +109,9 @@ class JsonlEventStore:
         self._states: dict[str, _MissionState] = {}
 
     def path_for(self, mission_id: str) -> Path:
+        # mission_id becomes a directory name, so refuse anything that could escape runs_dir.
+        if not _MISSION_ID_RE.fullmatch(mission_id) or ".." in mission_id:
+            raise ValueError(f"invalid mission id: {mission_id!r}")
         return self._runs_dir / mission_id / EVENTS_FILENAME
 
     def missions(self) -> list[str]:
@@ -115,6 +120,7 @@ class JsonlEventStore:
         return sorted(p.parent.name for p in self._runs_dir.glob(f"*/{EVENTS_FILENAME}"))
 
     def _state(self, mission_id: str) -> _MissionState:
+        self.path_for(mission_id)  # validates the id before any state is created
         st = self._states.get(mission_id)
         if st is None:
             st = self._states[mission_id] = _MissionState()

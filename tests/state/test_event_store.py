@@ -134,6 +134,21 @@ async def test_crash_recovery_truncates_partial_line(
     assert [e.seq for e in await second.read(MID)] == [1, 2, 3, 4]
 
 
+@pytest.mark.parametrize("bad", ["../x", "a/b", "C:\\x", "", "..", "a..b", ".hidden", "a\n", "x" * 129])
+async def test_invalid_mission_id_rejected(store: JsonlEventStore, bad: str) -> None:
+    with pytest.raises(ValueError):
+        store.path_for(bad)
+    with pytest.raises(ValueError):
+        await store.append(make_event(INFO, mid=bad))
+    with pytest.raises(ValueError):
+        await store.read(bad)
+
+
+def test_valid_mission_ids_accepted(store: JsonlEventStore) -> None:
+    for ok in ("M-1", "m_2.x", "20260101-abc", "x" * 128):
+        assert store.path_for(ok).parent.name == ok
+
+
 async def test_missions_lists_event_files(store: JsonlEventStore) -> None:
     assert store.missions() == []
     await store.append(make_event(INFO, mid="b"))

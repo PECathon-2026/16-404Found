@@ -100,7 +100,7 @@ class EventSourcedBlackboard:
         json_payload: dict[str, Any] = to_jsonable_python(payload)
         async with self._lock:
             draft = Event(
-                seq=0,
+                seq=self.mission.last_seq + 1,  # provisional; the store assigns the real one
                 mission_id=self.mission.id,
                 type=type,
                 actor=actor,
@@ -110,9 +110,11 @@ class EventSourcedBlackboard:
                 payload=json_payload,
                 summary=summary,
             )
+            # Validate before persisting so an invalid payload can never become a poison event.
+            mutation = projector.prepare(self.mission, draft)
             stored = await self._store.append(draft)
             if stored.type not in EPHEMERAL:
-                projector.apply(self.mission, stored)
+                mutation(stored)
                 self._maybe_cache(stored.seq)
         return stored
 
