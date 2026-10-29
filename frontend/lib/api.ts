@@ -1,4 +1,4 @@
-import type { Diffs, Decision, DevEvent, Finding, Metrics, MissionDetail, MissionSummary, ModelsConfig, Msg, Repository, Scenario, Task, TestRun, ToolCallRow, Verification, Outcome } from "./types";
+import type { EvalResult, Diffs, Decision, DevEvent, Finding, Metrics, MissionDetail, MissionSummary, ModelsConfig, Msg, Repository, Scenario, Task, TestRun, ToolCallRow, Verification, Outcome } from "./types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const BASE = `${API_URL}/api/v1`;
@@ -26,11 +26,20 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 const post = <T,>(path: string, body?: unknown) => req<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
 
 export const api = {
+  evalResults: () => req<{ results: EvalResult[] | null; note?: string }>("/eval/results"),
   health: () => req<{ status: string }>("/health"),
   config: () => req<ModelsConfig>("/config/models"),
   repos: {
     list: () => req<{ repositories: Repository[] }>("/repositories").then((r) => r.repositories),
     create: (b: { source_type: "LOCAL_PATH" | "GIT_URL"; source_ref: string; branch?: string; github_token?: string; name?: string }) => post<Repository>("/repositories", b),
+    upload: (formData: FormData) => fetch(`${BASE}/repositories/upload`, { method: "POST", body: formData }).then(async (res) => {
+      if (!res.ok) {
+        let errBody: { error?: { message?: string } } = {};
+        try { errBody = await res.json(); } catch {}
+        throw new ApiError(res.status, "UPLOAD_FAILED", errBody.error?.message ?? `Upload failed (${res.status})`);
+      }
+      return res.json() as Promise<Repository>;
+    }),
     parse: (url: string) => req<{ valid: boolean; owner: string | null; name: string | null }>(`/repositories/parse?url=${encodeURIComponent(url)}`),
   },
   demo: {

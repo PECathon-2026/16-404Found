@@ -36,7 +36,7 @@ export function useMissionLive(id: string) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alive = useRef(true);
 
-  const load = useCallback(async (keys: Key[]) => {
+  const load = useCallback(async (keys: Key[], retried = false) => {
     const fetchers: Record<Key, () => Promise<unknown>> = {
       detail: () => api.missions.get(id), tasks: () => api.missions.tasks(id), messages: () => api.missions.messages(id), decisions: () => api.missions.decisions(id),
       toolCalls: () => api.missions.toolCalls(id), diffs: () => api.missions.diffs(id), tests: () => api.missions.testRuns(id), findings: () => api.missions.findings(id),
@@ -49,8 +49,11 @@ export function useMissionLive(id: string) {
       results.forEach((r, i) => { if (r.status === "fulfilled") next[keys[i]] = r.value; });
       return next as unknown as Snapshot;
     });
+    const failedKeys = keys.filter((_, i) => results[i].status === "rejected");
     const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
     if (failed && keys.includes("detail")) setError(failed.reason as ApiError); else if (keys.includes("detail")) setError(null);
+    // A failed refresh must never leave a panel silently stale (an old approval screen is a safety problem): retry once.
+    if (failedKeys.length && !retried) setTimeout(() => { if (alive.current) void load(failedKeys, true); }, 1500);
   }, [id]);
 
   const schedule = useCallback((keys: Key[]) => {
@@ -85,7 +88,10 @@ export function useMissionLive(id: string) {
       if (type.startsWith("test.")) schedule(["metrics"]);
     };
     EVENT_TYPES.forEach((t) => es.addEventListener(t, handler(t) as EventListener));
-    return () => { alive.current = false; clearTimeout(t0); es.close(); if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
+    // Reconcile: events only say *what* changed; periodically re-read the snapshots while the mission is live so a dropped
+    // event or request cannot leave the approval panel showing old evidence.
+    const rec = setInterval(() => { if (!document.hidden) void load(["detail", "tasks", "findings", "tests", "verification", "diffs"]); }, 6000);
+    return () => { alive.current = false; clearTimeout(t0); clearInterval(rec); es.close(); if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
   }, [id, load, schedule]);
 
   const refresh = useCallback(() => load(["detail", "tasks", "diffs", "tests", "findings", "verification", "metrics"]), [load]);

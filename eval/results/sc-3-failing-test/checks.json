@@ -1,0 +1,52 @@
+[
+ {
+  "name": "reaches COMPLETED",
+  "ok": true,
+  "detail": "COMPLETED"
+ },
+ {
+  "name": "feedback loop order: test.failed -> repair.initiated -> test.passed",
+  "ok": true,
+  "detail": "60<74<109"
+ },
+ {
+  "name": "final run on the patch is GREEN after red run(s)",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "every rerun was on a different patch",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "the repair addressed new evidence (distinct failure fingerprints)",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": ">= 7 distinct master actions chosen from evidence",
+  "ok": true,
+  "detail": "COMPLETE,DELEGATE,EXECUTE,PLAN,REQUEST_APPROVAL,RETRY,VERIFY"
+ },
+ {
+  "name": "tests were never modified",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "system independently re-ran the tests (CONFIRM)",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "independent verifier PASS",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "approved patch applied to the source repository",
+  "ok": true,
+  "detail": ""
+ }
+]

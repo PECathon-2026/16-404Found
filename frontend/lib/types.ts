@@ -46,4 +46,6 @@ export interface Metrics { tokens_used: number; model_calls: number; tool_calls:
   distinct_developer_tools: number; repair_cycles: number; messages: number; test_runs: number; final_test_outcome: string | null; findings: { total: number; open: number }; cost_usd: number | null; cost_note: string }
 export interface DevEvent { id: string; type: string; actor: string; task_id: string | null; created_at: string; payload: Record<string, unknown> }
 export interface ModelsConfig { providers: { id: string; available: boolean; reason: string | null }[]; models: Record<string, string | null>; live_available: boolean; sandbox_mode: string; sandbox_note: string; github_token_configured: boolean }
+export interface EvalCheck { name: string; ok: boolean; detail: string }
+export interface EvalResult { id: string; title: string; ok: boolean; checks: EvalCheck[]; seconds: number; mission_id: string; final_status: string; error: string | null }
 export interface Scenario { id: string; title: string; prompt: string; category: string; description: string; scripted: boolean }

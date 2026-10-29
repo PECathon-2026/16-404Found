@@ -62,12 +62,14 @@ async def import_repo(deps: Deps, source_type: str, source_ref: str, name: str |
         local = s.repos_dir / rid
         local.parent.mkdir(parents=True, exist_ok=True)
         tok = token or (s.github_token or None)
-        args = ["clone", "-q", "--depth", "50"] + (["--branch", branch] if branch else []) + [url, str(local)]
+        args = ["clone", "-q", "--depth", "50"] + (["--branch", branch.strip()] if branch and branch.strip() else []) + [url, str(local)]
         try:
             await git(local.parent, *args, env_extra=auth_env(tok) if gh else None, timeout=240)
         except GitError as e:
             shutil.rmtree(local, ignore_errors=True)
             msg = _scrub(str(e), tok)
+            if branch and ("Remote branch" in msg or "not found in upstream" in msg or "Could not find remote branch" in msg):
+                raise RepoError(f"branch '{branch}' does not exist on {owner}/{gname}. (Leave the Branch field blank to use the default branch)") from None
             if re.search(r"not found|Authentication|could not read|403|404", msg, re.I):
                 raise RepoError("could not clone: repository not found, or it is private (provide a GitHub token with repo read access)") from None
             raise RepoError(f"could not clone: {msg[:200]}") from None

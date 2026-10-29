@@ -1,0 +1,32 @@
+[
+ {
+  "name": "reaches COMPLETED",
+  "ok": true,
+  "detail": "COMPLETED"
+ },
+ {
+  "name": "a reproduction test was written BEFORE the fix",
+  "ok": true,
+  "detail": "test@0 fix@1"
+ },
+ {
+  "name": "the reproduction failed first, then passed after the fix",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "minimal fix: <= 10 changed lines in the defect file",
+  "ok": true,
+  "detail": "(1, 1)"
+ },
+ {
+  "name": "no unrelated files touched",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "verifier PASS, no test weakened",
+  "ok": true,
+  "detail": ""
+ }
+]

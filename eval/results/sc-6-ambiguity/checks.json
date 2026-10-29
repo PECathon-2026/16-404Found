@@ -1,0 +1,32 @@
+[
+ {
+  "name": "reaches COMPLETED after the answer",
+  "ok": true,
+  "detail": "COMPLETED"
+ },
+ {
+  "name": "a question was raised and answered (human.input_requested -> human.input_received)",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "ZERO write tool calls before the human answered",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "the question is concrete and answerable, not 'please clarify'",
+  "ok": true,
+  "detail": "What does 'faster' mean here: fewer lookups in cart.price_of/total (CPU), fewer database/API calls, "
+ },
+ {
+  "name": "the answer was recorded and fed into re-planning",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "name": "verifier PASS on the clarified criteria",
+  "ok": true,
+  "detail": ""
+ }
+]

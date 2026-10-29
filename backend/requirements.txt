@@ -9,3 +9,4 @@ langgraph==1.2.18
 langgraph-checkpoint-sqlite==3.1.2
 # Test runner for the repositories DevPilot works on (the sandbox runs `python -m pytest`).
 pytest==9.2.0
+python-multipart>=0.0.9

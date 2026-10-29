@@ -1,5 +1,5 @@
 "use client";
-import { Activity, FileText, GitBranch, History, LayoutDashboard, ListChecks, Moon, Network, Settings, ShieldAlert, Sun } from "lucide-react";
+import { Activity, ClipboardCheck, FileText, GitBranch, History, LayoutDashboard, ListChecks, Moon, Network, Settings, ShieldAlert, Sun } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { Suspense } from "react";
@@ -10,7 +10,7 @@ import { Badge, cx } from "./ui";
 
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard }, { href: "/missions", label: "Missions", icon: ListChecks }, { href: "/agents", label: "Agent Network", icon: Network },
-  { href: "/repositories", label: "Repositories", icon: GitBranch }, { href: "/history", label: "Execution History", icon: History }, { href: "/reports", label: "Reports", icon: FileText },
+  { href: "/repositories", label: "Repositories", icon: GitBranch }, { href: "/evaluation", label: "Evaluation", icon: ClipboardCheck }, { href: "/history", label: "Execution History", icon: History }, { href: "/reports", label: "Reports", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -41,7 +41,7 @@ function MobileNav() {
   const path = usePathname();
   return (
     <nav aria-label="Primary (mobile)" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-surface md:hidden">
-        {[NAV[0], NAV[1], NAV[2], NAV[3], NAV[6]].map(({ href, label, icon: Icon }) => {
+        {[NAV[0], NAV[1], NAV[2], NAV[3], NAV[7]].map(({ href, label, icon: Icon }) => {
           const active = href === "/" ? path === "/" : path.startsWith(href);
           return <Link key={href} href={href} aria-current={active ? "page" : undefined} className={cx("flex flex-col items-center gap-0.5 py-2 text-[11px]", active ? "text-accent" : "text-fg3")}><Icon className="h-4 w-4" aria-hidden />{label.split(" ")[0]}</Link>;
         })}

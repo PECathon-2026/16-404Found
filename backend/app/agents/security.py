@@ -43,7 +43,8 @@ class SecurityAgent:
                 for it in (r.data or {}).get("findings", []):
                     found.append((it, r.tool_call_id))
             existing = [f for f in s.findings(mission_id) if f["raised_by"] == "security" and f["source"].startswith("scanner")]
-            seen_fps = {f["fingerprint"] for f in existing}
+            # findings already recorded by ANY actor (e.g. the ingest-time injection scan) are not duplicated
+            seen_fps = {f["fingerprint"] for f in s.findings(mission_id) if f["source"].startswith("scanner")}
             current_fps = set()
             new_findings = []
             for it, tcl in found:

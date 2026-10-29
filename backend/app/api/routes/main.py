@@ -8,7 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -107,6 +107,13 @@ def build_router(c: Container) -> APIRouter:
                                 "Do not import untrusted repositories whose tests you would not run yourself.",
                 "github_token_configured": bool(d.settings.github_token)}
 
+    @r.get("/eval/results")
+    async def eval_results() -> dict[str, Any]:
+        p = EVAL_DIR.parent / "results" / "summary.json"
+        if not p.exists():
+            return {"results": None, "note": "no evaluation results yet; run `python -m app.evalkit` in backend/"}
+        return {"results": json.loads(p.read_text()), "markdown_available": (p.parent / "summary.md").exists()}
+
     # ---------------------------------------------------------------- repositories
     @r.post("/repositories", status_code=201)
     async def create_repo(body: RepoCreate) -> dict[str, Any]:
@@ -114,6 +121,89 @@ def build_router(c: Container) -> APIRouter:
             row = await import_repo(d, body.source_type, body.source_ref, body.name, body.branch, body.github_token)
         except RepoError as e:
             raise err(400, "REPO_IMPORT_FAILED", str(e)) from None
+        return public_repo(row)
+
+    @r.post("/repositories/upload", status_code=201)
+    async def upload_repo(
+        files: list[UploadFile] = File(...),
+        name: str | None = Form(None),
+    ) -> dict[str, Any]:
+        if not files:
+            raise err(400, "NO_FILES", "No files uploaded")
+
+        uid = new_id("upl")[-8:].lower()
+        repo_name = (name or "").strip()
+
+        # Check if single zip file
+        if len(files) == 1 and files[0].filename and files[0].filename.endswith(".zip"):
+            zf_bytes = await files[0].read()
+            import io
+            import zipfile
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(zf_bytes))
+            except Exception as e:
+                raise err(400, "INVALID_ZIP", f"Uploaded file is not a valid zip archive: {e}") from None
+
+            dest = d.settings.repos_dir / f"upload_{uid}"
+            dest.mkdir(parents=True, exist_ok=True)
+            for member in zf.infolist():
+                if member.is_dir():
+                    continue
+                p = Path(member.filename)
+                if p.is_absolute() or ".." in p.parts:
+                    continue
+                target = (dest / p).resolve()
+                if not str(target).startswith(str(dest.resolve())):
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(zf.read(member))
+            if not repo_name and files[0].filename:
+                repo_name = Path(files[0].filename).stem
+        else:
+            dest = d.settings.repos_dir / f"upload_{uid}"
+            dest.mkdir(parents=True, exist_ok=True)
+            for f in files:
+                fn = f.filename or "file"
+                p = Path(fn)
+                if p.is_absolute() or ".." in p.parts:
+                    continue
+                target = (dest / p).resolve()
+                if not str(target).startswith(str(dest.resolve())):
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                content = await f.read()
+                target.write_bytes(content)
+            if not repo_name and files[0].filename:
+                first_part = Path(files[0].filename).parts[0]
+                if first_part and first_part != ".":
+                    repo_name = first_part
+
+        # If all uploaded files are inside a single top-level directory, move them up
+        subdirs = [p for p in dest.iterdir() if p.name != ".git"]
+        if len(subdirs) == 1 and subdirs[0].is_dir():
+            single_child = subdirs[0]
+            if not repo_name:
+                repo_name = single_child.name
+            for item in list(single_child.iterdir()):
+                shutil.move(str(item), str(dest / item.name))
+            shutil.rmtree(single_child, ignore_errors=True)
+
+        if not (dest / ".git").is_dir():
+            try:
+                await git(dest, "init", "-q")
+                await git(dest, "config", "user.email", "devpilot@pecathon.internal")
+                await git(dest, "config", "user.name", "DevPilot")
+                await git(dest, "add", "-A")
+                await git(dest, "commit", "-q", "-m", "Initial commit from uploaded folder", "--allow-empty")
+            except Exception:
+                pass
+
+        try:
+            row = await import_repo(d, "LOCAL_PATH", str(dest), name=repo_name or f"upload-{uid}")
+        except RepoError as e:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise err(400, "REPO_IMPORT_FAILED", str(e)) from None
+
         return public_repo(row)
 
     @r.get("/repositories")

@@ -10,6 +10,7 @@ services:
       DEVPILOT_CORS_ORIGINS: http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001
     volumes:
       - devpilot-data:/data
+      - ./backend/app:/app/app:ro
       - ./eval:/eval:ro           # demo scenarios
     restart: unless-stopped
 volumes:

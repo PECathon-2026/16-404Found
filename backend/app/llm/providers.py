@@ -10,6 +10,13 @@ import httpx
 from .base import LLMError, LLMResponse, Msg, ToolCall, Usage, tool_name, wire_name
 
 
+def _retryable(status: int, body: str) -> bool:
+    """Rate limits and 5xx are worth retrying; an exhausted quota/credit balance is permanent (retrying only burns time)."""
+    if status == 429 and any(w in body.lower() for w in ("insufficient", "quota", "credit", "billing")):
+        return False
+    return status in (408, 409, 429, 500, 502, 503, 529)
+
+
 class AnthropicProvider:
     name = "anthropic"
 
@@ -51,7 +58,7 @@ class AnthropicProvider:
             except httpx.HTTPError as e:
                 raise LLMError(f"anthropic transport error: {type(e).__name__}", retryable=True) from None
         if r.status_code >= 400:
-            raise LLMError(f"anthropic HTTP {r.status_code}: {r.text[:200]}", retryable=r.status_code in (408, 409, 429, 500, 502, 503, 529))
+            raise LLMError(f"anthropic HTTP {r.status_code}: {r.text[:200]}", retryable=_retryable(r.status_code, r.text))
         return self.parse(r.json(), self.model)
 
 
@@ -101,5 +108,5 @@ class OpenAICompatProvider:
             except httpx.HTTPError as e:
                 raise LLMError(f"openai-compat transport error: {type(e).__name__}", retryable=True) from None
         if r.status_code >= 400:
-            raise LLMError(f"openai-compat HTTP {r.status_code}: {r.text[:200]}", retryable=r.status_code in (408, 409, 429, 500, 502, 503))
+            raise LLMError(f"openai-compat HTTP {r.status_code}: {r.text[:200]}", retryable=_retryable(r.status_code, r.text))
         return self.parse(r.json(), self.model)

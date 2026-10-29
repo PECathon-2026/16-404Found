@@ -19,3 +19,12 @@ def test_error_messages_are_scrubbed():
 def test_branch_names_are_safe_and_namespaced():
     b = branch_name("mis_01ABCDEFGHJKMNPQRSTVWXYZ12", "Fix `rm -rf /` & more!!")
     assert b.startswith("devpilot/") and " " not in b and ".." not in b and "`" not in b and b.endswith("xyz12")
+
+
+def test_exhausted_quota_is_not_retried_but_rate_limit_is():
+    from app.llm.providers import _retryable
+
+    assert _retryable(429, '{"error":{"message":"You have no credits remaining"}}') is False
+    assert _retryable(429, "insufficient_quota") is False
+    assert _retryable(429, "Rate limit reached, retry in 2s") is True
+    assert _retryable(503, "") is True and _retryable(401, "") is False
