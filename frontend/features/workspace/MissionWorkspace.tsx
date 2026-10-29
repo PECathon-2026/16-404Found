@@ -1,5 +1,5 @@
 "use client";
-import { Ban, GitBranch, Pause, Play, Wifi, WifiOff } from "lucide-react";
+import { Ban, GitBranch, Pause, Play, Wifi, WifiOff, AlertTriangle, ExternalLink, Sparkles, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import React, { Suspense, useCallback, useState } from "react";
@@ -125,8 +125,64 @@ function Workspace({ missionId }: { missionId: string }) {
           {d.status === "AWAITING_HUMAN" && d.pending_human_request && <HumanRequestCard key={d.pending_human_request.id} missionId={d.id} req={d.pending_human_request} onDone={() => void live.refresh()} />}
           {d.status === "AWAITING_APPROVAL" && <ApprovalPanel key={d.current_patch_sha256 ?? "x"} d={d} diffs={live.diffs} tests={live.tests} findings={live.findings} verification={live.verification} onDone={() => void live.refresh()} />}
           {["COMPLETED", "REJECTED", "FAILED", "CANCELLED"].includes(d.status) && (
-            <Card className={d.status === "COMPLETED" ? "border-success/40" : "border-danger/40"}><div className="space-y-1 p-4"><MissionStatusBadge status={d.status} /><p className="text-sm text-fg2">{d.status_reason}</p>
-              <button className="text-sm text-accent underline" onClick={() => setTab("report")}>Open the evidence report</button></div></Card>)}
+            <Card className={d.status === "COMPLETED" ? "border-success/40" : "border-danger/40"}>
+              <div className="space-y-3 p-4">
+                <div className="flex items-center justify-between">
+                  <MissionStatusBadge status={d.status} />
+                  {/quota|credit|balance|billing|insufficient/i.test(d.status_reason || "") && (
+                    <Badge tone="warning" className="text-[10px]">Zero-Quota Resilience</Badge>
+                  )}
+                </div>
+
+                {/quota|credit|balance|billing|insufficient/i.test(d.status_reason || "") ? (
+                  <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs space-y-2.5">
+                    <div className="flex items-center gap-1.5 font-semibold text-warning">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <span>LLM API Quota Exhausted</span>
+                    </div>
+                    <p className="text-fg2 leading-relaxed">
+                      Your configured OpenAI / Anthropic key has $0 balance remaining. DevPilot supports zero-credit resilience options:
+                    </p>
+                    <div className="space-y-2 border-t border-line/60 pt-2 text-[11px]">
+                      <div className="rounded bg-surface p-2 border border-line">
+                        <b className="text-fg block mb-0.5">1. Free Google Gemini / Groq</b>
+                        <p className="text-fg3 mb-1">Set free Gemini API in <code className="font-mono text-accent">backend/.env</code>:</p>
+                        <div className="rounded bg-canvas p-1.5 font-mono text-[10px] text-accent select-all">
+                          OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/<br/>
+                          OPENAI_MODEL=gemini-2.5-flash<br/>
+                          OPENAI_API_KEY=&lt;gemini_key&gt;
+                        </div>
+                      </div>
+                      <div className="rounded bg-surface p-2 border border-line flex items-center justify-between">
+                        <div>
+                          <b className="text-fg block">2. Scripted Demo Engine</b>
+                          <span className="text-fg3">Run SC-1 to SC-8 with zero LLM API calls</span>
+                        </div>
+                        <Link href="/missions/new" className="rounded bg-accent/15 px-2 py-1 font-medium text-accent hover:bg-accent/25 transition-colors">
+                          Demo Scenarios →
+                        </Link>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-line/60 text-[11px]">
+                      <a href="https://platform.openai.com/settings/organization/billing" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-fg3 hover:text-fg underline">
+                        OpenAI Billing <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <span className="text-fg3">·</span>
+                      <a href="https://console.anthropic.com/settings/plans" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-fg3 hover:text-fg underline">
+                        Anthropic Plans <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <button className="ml-auto text-accent underline" onClick={() => setTab("report")}>Open evidence report</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm text-fg2">{d.status_reason}</p>
+                    <button className="mt-2 text-sm text-accent underline block" onClick={() => setTab("report")}>Open the evidence report</button>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
           <Card><CardHeader title="Agents" sub="click to filter the activity feed" /><div className="space-y-1.5 p-3">
             {d.agents.map((a) => <AgentCard key={a.agent_id} a={a} active={agent === a.agent_id} onClick={() => { setAgent(agent === a.agent_id ? null : a.agent_id); setTab("activity"); }} />)}</div></Card>
           <MetricsPanel m={live.metrics} d={d} />

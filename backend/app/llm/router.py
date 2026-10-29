@@ -88,6 +88,20 @@ class LLMRouter:
                 self._record(deps, mission["id"], execution_id, p, role, r, int((time.monotonic() - t0) * 1000), "OK",
                              fallback_from=providers[i - 1].name if i else None)
                 return r
+        is_quota = getattr(last, "quota_exhausted", False) or any(
+            w in str(last).lower() for w in ("quota", "credit", "balance", "insufficient_quota")
+        )
+        if is_quota:
+            deps.bus.publish(
+                mission["id"],
+                "quota.exhausted",
+                "system",
+                {
+                    "details": str(last),
+                    "action_required": "Switch to free Google Gemini API or add OpenAI credits",
+                },
+            )
+            raise LLMError(f"LLM Quota Exhausted: {last}", retryable=False, quota_exhausted=True)
         raise LLMError(f"all providers failed: {last}")
 
     def _record(self, deps: Deps, mid: str, exe: str | None, p: Any, role: str, r: LLMResponse | None, ms: int, status: str,

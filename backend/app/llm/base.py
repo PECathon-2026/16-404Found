@@ -36,9 +36,10 @@ class LLMResponse:
 
 
 class LLMError(Exception):
-    def __init__(self, msg: str, retryable: bool = False):
+    def __init__(self, msg: str, retryable: bool = False, quota_exhausted: bool = False):
         super().__init__(msg)
         self.retryable = retryable
+        self.quota_exhausted = quota_exhausted
 
 
 class BudgetExceeded(Exception):

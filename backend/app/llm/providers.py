@@ -58,7 +58,20 @@ class AnthropicProvider:
             except httpx.HTTPError as e:
                 raise LLMError(f"anthropic transport error: {type(e).__name__}", retryable=True) from None
         if r.status_code >= 400:
-            raise LLMError(f"anthropic HTTP {r.status_code}: {r.text[:200]}", retryable=_retryable(r.status_code, r.text))
+            quota = False
+            msg = f"anthropic HTTP {r.status_code}: {r.text[:200]}"
+            try:
+                d = r.json()
+                if "error" in d and isinstance(d["error"], dict) and "message" in d["error"]:
+                    t = d["error"]["message"]
+                    if any(w in t.lower() for w in ("credit", "balance", "billing")):
+                        msg = f"Anthropic credit balance is too low ($0 remaining). Add credits at console.anthropic.com or use a free Gemini/Groq key."
+                        quota = True
+                    else:
+                        msg = f"Anthropic error: {t}"
+            except Exception:
+                pass
+            raise LLMError(msg, retryable=_retryable(r.status_code, r.text), quota_exhausted=quota)
         return self.parse(r.json(), self.model)
 
 
@@ -108,5 +121,19 @@ class OpenAICompatProvider:
             except httpx.HTTPError as e:
                 raise LLMError(f"openai-compat transport error: {type(e).__name__}", retryable=True) from None
         if r.status_code >= 400:
-            raise LLMError(f"openai-compat HTTP {r.status_code}: {r.text[:200]}", retryable=_retryable(r.status_code, r.text))
+            quota = False
+            msg = f"openai-compat HTTP {r.status_code}: {r.text[:200]}"
+            try:
+                d = r.json()
+                if "error" in d and isinstance(d["error"], dict) and "message" in d["error"]:
+                    t = d["error"]["message"]
+                    code = d["error"].get("code", "")
+                    if any(w in t.lower() for w in ("credit", "quota", "billing")) or code == "credit_balance_exhausted":
+                        msg = f"OpenAI credits exhausted ($0 balance remaining). Add credits at platform.openai.com/billing or configure a free Gemini/Groq key."
+                        quota = True
+                    else:
+                        msg = f"OpenAI error: {t}"
+            except Exception:
+                pass
+            raise LLMError(msg, retryable=_retryable(r.status_code, r.text), quota_exhausted=quota)
         return self.parse(r.json(), self.model)
