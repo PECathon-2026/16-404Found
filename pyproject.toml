@@ -50,6 +50,8 @@ extend-exclude = ["fixtures", "runs", "web"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+per-file-ignores = { "devpilot/engine/modes.py" = ["RUF005"] }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

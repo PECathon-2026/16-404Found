@@ -1,0 +1,83 @@
+# DevPilot Tool Policy Configuration
+# Reference: docs/05-TOOLS-AND-SANDBOX.md §2-§3
+
+[commands.allow]
+patterns = [
+  "python -m pytest *",
+  "pytest *",
+  "python -m unittest *",
+  "python -m ruff check *",
+  "ruff check *",
+  "python -m flake8 *",
+  "python -m mypy *",
+  "python -m bandit *",
+  "semgrep --config auto *",
+  "npm test",
+  "npm run test *",
+  "npm run lint *",
+  "npx jest *",
+  "git status *",
+  "git diff *",
+  "git log *",
+  "git show *",
+  "python -c *",                 # ONLY when tool caller is Verifier/Sentinel; inspected for imports of os/subprocess/shutil
+]
+
+[commands.ask]
+patterns = [
+  "pip install *",
+  "python -m pip install *",
+  "npm install *",
+  "npm ci",
+]
+
+[commands.deny]
+patterns = [
+  "rm *",
+  "rmdir *",
+  "del *",
+  "Remove-Item *",
+  "format *",
+  "mkfs*",
+  "dd *",
+  "git push *",
+  "git reset --hard*",
+  "git clean *",
+  "git checkout -- *",
+  "git rebase *",
+  "git commit *",            # only the orchestrator commits
+  "curl *",
+  "wget *",
+  "Invoke-WebRequest *",
+  "ssh *",
+  "scp *",
+  "sudo *",
+  "chmod *",
+  "chown *",
+  "shutdown *",
+  "reboot *",
+  "powershell *",
+  "cmd *",
+  "bash *",
+  "sh *",
+]
+
+[filesystem.write_deny]
+patterns = [
+  ".git/**",
+  ".github/workflows/**",
+  "**/.env*",
+  "**/*.pem",
+  "**/id_rsa*",
+  "poetry.lock",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+]
+
+[filesystem.read_redact]
+patterns = [
+  "**/.env*",
+  "**/*secret*",
+  "**/*.pem",
+  "**/id_rsa*",
+]

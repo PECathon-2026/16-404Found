@@ -1,0 +1,64 @@
+# DevPilot Configuration Example
+# Copy to devpilot.toml and customize.
+
+[models]
+shogun    = "claude-opus-5-5"
+verifier  = "claude-opus-5-5"
+scout     = "claude-sonnet-5-5"
+samurai   = "claude-sonnet-5-5"
+sentinel  = "claude-sonnet-5-5"
+reviewer  = "claude-sonnet-5-5"
+security  = "claude-sonnet-5-5"
+
+# Model tiers (resolved by ModeSpec.tier)
+frontier  = "claude-opus-5-5"
+workhorse = "claude-sonnet-5-5"
+fast      = "claude-haiku-5-5"
+
+[sandbox]
+tier = "auto" # "auto" | "worktree" | "docker"
+
+[gates]
+apply = true          # Mandatory: apply gate before modifying target repo
+plan = false          # Optional: plan approval before implementation
+command = true        # Mandatory: approve commands in commands.ask tier
+clarification = true  # Clarification questions on ambiguity
+escalation = true     # Escalation on repeated failure or unresolvable dispute
+
+[budgets]
+max_attempts_per_task = 4
+max_fix_cycles = 8
+max_replans = 2
+max_tournament_k = 3
+max_tournaments = 2
+max_tokens_mission = 1500000
+max_cost_usd = 15.0
+max_wall_clock_s = 1800
+tool_timeout_s = 120
+llm_concurrency = 4
+max_parallel_samurai = 3
+
+[chaos]
+disable_tools = []
+chaos_test_timeout = false
+answers = ""
+
+[profiles.fast]
+description = "Fast execution: no tournaments, no premortem, sonnet everywhere"
+allow_tournaments = false
+allow_premortem = false
+model_override = "claude-sonnet-5-5"
+plan_gate = false
+
+[profiles.balanced]
+description = "Balanced execution: standard cognitive modes and verification"
+allow_tournaments = true
+allow_premortem = true
+plan_gate = false
+
+[profiles.careful]
+description = "Careful execution: plan gate enabled, tournaments on medium risk"
+allow_tournaments = true
+allow_premortem = true
+plan_gate = true
+tournament_min_risk = "medium"

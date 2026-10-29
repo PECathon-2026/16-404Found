@@ -1,0 +1,50 @@
+# DevPilot gitignore
+
+# Runtime and workspaces
+runs/
+eval/results.json
+eval/results.md
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Node / Web UI
+node_modules/
+web/dist/
+web/.next/
+web/build/
+
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Testing & Linters cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cov.json
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
