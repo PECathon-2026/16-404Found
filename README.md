@@ -15,6 +15,17 @@ cd frontend && npm install && npm run build && npm run start -- -p 3000     # ht
 **No API key?** Open *New mission → Demo scenario*. The model is scripted; tools, test runs, verifier, security scan, gate and approval are real.
 **Live missions** need `ANTHROPIC_API_KEY`+`ANTHROPIC_MODEL` or `OPENAI_API_KEY`+`OPENAI_MODEL` (+`OPENAI_BASE_URL`; Gemini works via its OpenAI-compatible endpoint). No model id is hardcoded.
 
+## Backend in Docker
+```sh
+docker build -t devpilot-backend ./backend
+docker run -d --name devpilot -p 8000:8000 \
+  -v devpilot-data:/data -v "$PWD/eval:/eval:ro" \
+  --env-file backend/.env \          # optional: model keys, GITHUB_TOKEN (omit if no .env)
+  devpilot-backend
+# or: docker compose up -d --build
+```
+Data (DB, workspaces, reports) persists in the `devpilot-data` volume. Local-folder repositories must be mounted into the container to be importable (e.g. `-v "$HOME/projects:/projects"`, then import `/projects/my-app`); GitHub links work as-is. The sandbox inside the container is still the local jail, not a nested container.
+
 ## Work on a GitHub repository
 *Repositories → paste `https://github.com/owner/repo`* (optional token for private repos). DevPilot clones into its own directory, works on an isolated copy, and on **approval** creates a new branch `devpilot/…` with one commit. **Pushing and opening a PR are opt-in checkboxes at approval time**, off by default; tokens are passed via env-config header, never stored or logged.
 
