@@ -36,6 +36,11 @@ class DeveloperAgent:
                  f"Files you are expected to touch/create: {task['files_hint']}",
                  "Acceptance criteria this task serves:\n" + "\n".join(f"- {c}" for c in served),
                  f"Repository conventions detected: {json.dumps(plan.get('conventions', {}))}"]
+        from ..services.memory import recall
+
+        mem = recall(self.deps, mission["repository_id"])
+        if mem:
+            parts.append("Notes from earlier missions on this repository (hints, NOT verified facts):\n" + "\n".join(f"- {m}" for m in mem))
         notes = (mission["config"] or {}).get("human_notes") or []
         if notes:
             parts.append("Human guidance:\n" + "\n".join(f"- {n}" for n in notes))
@@ -70,5 +75,26 @@ class DeveloperAgent:
                            {"summary": res.summary[:300], "files_changed": exe.result["files_changed"], "known_gaps": res.known_gaps,
                             "note": "self-reported; tester and verifier will re-run everything"},
                            evidence, task_id=task_id, in_reply_to=None)
+            self._respond_to_critiques(mission_id, task_id, res, evidence)
             s.set_task_status(task_id, TaskStatus.IN_REVIEW, actor="developer")
             return DevOutcome(True, None, res.summary, bool(changes))
+
+    def _respond_to_critiques(self, mission_id: str, task_id: str, res: DeveloperResult, evidence: list[dict[str, Any]]) -> None:
+        s = self.deps.state
+        findings = {f["id"]: f for f in s.findings(mission_id)}
+        for r in res.critique_responses:
+            f = findings.get(r.finding_id)
+            critic = (f or {}).get("raised_by", "security")
+            critic = critic if critic in ("security", "tester") else "security"
+            if r.stance == "DISPUTE" and not r.evidence_refs:
+                # unevidenced disputes are not accepted: the finding stays open and the master is told
+                s.post_message(mission_id, "developer", "master", MessageType.STATUS,
+                               {"summary": f"dispute of {r.finding_id} rejected: a DISPUTE needs evidence_refs", "state": "REJECTED_DISPUTE"}, task_id=task_id)
+                continue
+            s.post_message(mission_id, "developer", critic, MessageType.CRITIQUE_RESPONSE,
+                           {"summary": f"{r.stance}: {r.rationale}"[:300], "finding_id": r.finding_id, "stance": r.stance},
+                           r.evidence_refs or evidence[:1], task_id=task_id)
+            if r.stance == "DISPUTE" and f and f["status"] in ("OPEN", "FIX_PROPOSED"):
+                s.set_finding_status(r.finding_id, "DISPUTED", actor="developer")
+            elif r.stance == "ACCEPT" and f and f["status"] == "OPEN":
+                s.set_finding_status(r.finding_id, "FIX_PROPOSED", actor="developer")

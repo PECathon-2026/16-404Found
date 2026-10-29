@@ -65,7 +65,7 @@ class MasterAgent:
             return None
 
         return {"m": m, "tasks": tasks, "criteria": s.criteria(mid), "findings": s.findings(mid), "runs": s.test_runs(mid),
-                "verification": s.latest_verification(mid), "approvals": s.approvals(mid), "sha": sha,
+                "verification": s.latest_verification(mid), "approvals": s.approvals(mid), "sha": sha, "messages": s.messages(mid),
                 "tester": done_for("tester"), "security": done_for("security"), "execs": execs,
                 "verifications_for_sha": len([v for v in self.deps.db.select(__import__("app.db", fromlist=["verification_reports"]).verification_reports,
                                                                           where_cols={"mission_id": mid}) if v["patch_sha256"] == sha])}
@@ -117,6 +117,25 @@ class MasterAgent:
                                        "options": [{"id": "answer", "label": "Answer the question", "needs_text": True}, {"id": "abort", "label": "Cancel mission"}]})
             return Decision(A.PLAN, "no plan yet: reconnaissance and planning required")
 
+        # A worker found the plan's assumptions false: replan (bounded), or ask the human once the limit is hit.
+        handled = set((m["config"] or {}).get("_handled_replans", []))
+        reqs = [x for x in v["messages"] if x["type"] == "REPLAN_REQUEST" and x["id"] not in handled]
+        if reqs:
+            r = reqs[0]
+            if m["replans"] < watchdog.limits(m)["max_replans"]:
+                return Decision(A.REPLAN, f"{r['sender']} reports the plan no longer fits the repository: {str(r['payload'].get('summary', ''))[:160]}",
+                                evidence_refs=r["evidence_refs"], extra={"replan": {"reason": r["payload"].get("summary"), "from": r["sender"], "evidence": r["evidence_refs"]},
+                                                                      "message_id": r["id"]})
+            return Decision(A.ESCALATE, "the plan was revised the maximum number of times and a worker still reports it does not fit", evidence_refs=r["evidence_refs"],
+                            extra={"escalation_kind": "ESCALATION", "kind": "REPLAN_LIMIT", "options": [{"id": "hint", "label": "Give guidance", "needs_text": True}, {"id": "abort", "label": "Cancel mission"}]})
+        # Disagreement about a finding is settled by evidence (the re-scan) or escalated to a human, never silently resolved.
+        disputed = [f for f in v["findings"] if f["status"] == "DISPUTED" and Severity(f["severity"]).rank >= Severity.MEDIUM.rank]
+        if disputed:
+            f = disputed[0]
+            return Decision(A.ESCALATE, f"the developer disputes a {f['severity']} finding ({f['category']} at {f['file']}:{f['line_start']}) and the re-scan still reports it: a human must settle it",
+                            evidence_refs=[x for x in [f["evidence_ref"]] if x], extra={"escalation_kind": "ESCALATION", "finding_id": f["id"], "options": [
+                                {"id": f"waive_finding:{f['id']}", "label": "The developer is right: waive this finding", "needs_text": True},
+                                {"id": "require_fix", "label": "The finding stands: require a fix", "needs_text": False}, {"id": "abort", "label": "Cancel mission"}]})
         dev = [t for t in live if t["kind"] in DEV_KINDS]
         ready = [t for t in dev if t["status"] == TaskStatus.READY]
         if ready:
@@ -291,6 +310,11 @@ class MasterAgent:
             s.post_message(mid, "master", "developer", MessageType.TASK_ASSIGN, {"summary": f"repair cycle {cyc}: {d.rationale}", "task_id": new["id"]},
                            d.evidence_refs or [{"kind": "decision", "id": rec["id"]}], task_id=new["id"],
                            idempotency_key=f"{mid}:{new['id']}:TASK_ASSIGN:1", ack_required=True)
+        elif d.action == A.REPLAN:
+            m = s.mission(mid)
+            cfg = dict(m["config"] or {})
+            cfg["_handled_replans"] = [*cfg.get("_handled_replans", []), d.extra.get("message_id") or "master"]
+            s.update_mission(mid, config=cfg)
         elif d.action == A.VERIFY:
             s.set_status(mid, MissionStatus.VERIFYING, d.rationale)
         elif d.action == A.REQUEST_APPROVAL:

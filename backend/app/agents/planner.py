@@ -40,6 +40,11 @@ class PlannerAgent:
         async with self.rt.execution(mission_id, "planner") as exe:
             ctx = make_ctx(self.deps, mission, "planner", exe_id=exe.id)
             parts = [f"REQUEST:\n{mission['request']}", f"REPOSITORY DIGEST (deterministic recon, verify with tools):\n{self._recon_digest(mission)}"]
+            from ..services.memory import recall
+
+            mem = recall(self.deps, mission["repository_id"])
+            if mem:
+                parts.append("NOTES FROM EARLIER MISSIONS ON THIS REPOSITORY (hints, not verified facts):\n" + "\n".join(f"- {m}" for m in mem))
             if notes:
                 parts.append("HUMAN CLARIFICATIONS / NOTES:\n" + "\n".join(f"- {n}" for n in notes))
             if replan:

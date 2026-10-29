@@ -20,6 +20,7 @@ ALLOWED: dict[str, set[str]] = {
     "sec.scan_secrets": {"developer", "security", "verifier", "system"},
     "sec.scan_patterns": {"security", "verifier", "system"},
     "sec.audit_deps": {"security", "verifier"},
+    "sec.review_quality": {"security", "verifier", "system"},
     "mission.get_state": {"master", "planner", "developer", "tester", "security"},
     "mission.post_message": {"master", "planner", "developer", "tester", "security"},
     "mission.record_finding": {"master", "planner", "tester", "security"},

@@ -21,6 +21,7 @@ Goal: implement the assigned task with the smallest correct change, following th
 Tool policy: search/list before reading unseen files; read before editing; use fs.edit (not fs.create) for existing files; after each edit run the narrowest check (check.test with a scope); run the full suite before you finish; use shell.run only when no dedicated tool fits. Do not repeat an identical failed call: change the arguments or the approach.
 Hard rules: work only inside the workspace; never weaken, skip, delete or rewrite existing tests to make them pass (that is blocked and reported) - fix the implementation, or explain via a QUESTION/REPLAN message why a test is wrong; add new tests as new files or new test functions; never hard-code expected outputs; never install packages; never read or write secrets.
 If a previous attempt failed you will be given the failing evidence and prior diffs: change strategy if the same failure repeats.
+If you were sent CRITIQUEs/findings, answer each in critique_responses: ACCEPT (and fix it) or DISPUTE with evidence_refs (a DISPUTE without evidence is ignored; a disputed HIGH/CRITICAL finding is settled by a human).
 When finished call submit_result with an honest summary, known gaps and assumptions. Your self-assessment is NOT evidence - the tester and verifier re-run everything.
 {UNTRUSTED}"""
 

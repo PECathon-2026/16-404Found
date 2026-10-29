@@ -47,7 +47,16 @@ class PlanResult(BaseModel):
     repo_notes: str = ""
 
 
+class CritiqueResponse(BaseModel):
+    """Developer's answer to a CRITIQUE. A DISPUTE must carry evidence (AGENTS.md §C); otherwise it is rejected."""
+    finding_id: str
+    stance: Literal["ACCEPT", "DISPUTE"]
+    rationale: str
+    evidence_refs: list[dict] = Field(default_factory=list)
+
+
 class DeveloperResult(BaseModel):
+    critique_responses: list[CritiqueResponse] = Field(default_factory=list)
     summary: str
     known_gaps: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)

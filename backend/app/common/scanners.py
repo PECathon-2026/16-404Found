@@ -195,3 +195,55 @@ def scan_injection(ws: Path) -> list[dict[str, Any]]:
                     "confidence": 0.7,
                 })
     return out
+
+
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
+
+
+def quality_review(patch: str, line_length: int | None = None) -> list[dict[str, Any]]:
+    """Deterministic code-review heuristics on *added* lines (readability, consistency, regression risk). Never blocking (LOW)."""
+    limit = line_length or 120
+    out: list[dict[str, Any]] = []
+    cur = None
+    n = 0
+    new_defs: list[tuple[str, int, str]] = []
+    changed_files: list[str] = []
+    for ln in patch.splitlines():
+        if ln.startswith("+++ b/"):
+            cur = ln[6:]
+            changed_files.append(cur)
+            continue
+        h = _HUNK.match(ln)
+        if h:
+            n = int(h.group(1))
+            continue
+        if cur is None or not ln.startswith("+") or ln.startswith("+++"):
+            if cur is not None and ln.startswith(" "):
+                n += 1
+            continue
+        text = ln[1:]
+        lineno, n = n, n + 1
+        is_py = cur.endswith(".py")
+        is_test = is_test_path(cur)
+
+        def add(rule: str, cat: str, why: str) -> None:
+            out.append({"rule": rule, "category": cat, "cwe": None, "file": cur, "line": lineno, "severity": "LOW", "evidence": redact_line(text),
+                        "fingerprint": fingerprint(rule, cur or "", text), "recommendation": why, "confidence": 0.7, "scope": "changed"})
+
+        if is_py and re.match(r"^\s*except\s*:", text):
+            add("bare_except", "CODE_QUALITY", "Catch specific exceptions; a bare except hides real errors.")
+        if is_py and not is_test and re.match(r"^\s*print\(", text):
+            add("debug_print", "CODE_QUALITY", "Use logging instead of print in library code.")
+        if re.search(r"#\s*(TODO|FIXME|XXX|HACK)\b", text):
+            add("todo", "CODE_QUALITY", "Resolve or track the TODO instead of shipping it.")
+        if len(text) > limit and not text.lstrip().startswith(("#", "http")):
+            add("long_line", "CODE_QUALITY", f"Line is {len(text)} chars; the project's limit is {limit}.")
+        m = re.match(r"^\s*(?:async\s+)?def\s+([A-Za-z]\w*)\(", text)
+        if m and is_py and not is_test and not m.group(1).startswith("_"):
+            new_defs.append((cur, lineno, text))
+    if new_defs and not any(is_test_path(f) for f in changed_files):
+        f, ln_, text = new_defs[0]
+        out.append({"rule": "missing_tests", "category": "TEST_COVERAGE", "cwe": None, "file": f, "line": ln_, "severity": "LOW", "evidence": redact_line(text),
+                    "fingerprint": fingerprint("missing_tests", f, "new public function without tests"),
+                    "recommendation": "New public functions were added but no test file changed; add tests (regression risk).", "confidence": 0.6, "scope": "changed"})
+    return out

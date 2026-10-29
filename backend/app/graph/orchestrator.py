@@ -304,6 +304,14 @@ class Orchestrator:
             runs = s.test_runs(mid)
             cfg["_fp_reset_after"] = runs[-1]["id"] if runs else None
             cfg["limits"] = {**(cfg.get("limits") or {}), "max_tokens": int((cfg.get("limits") or {}).get("max_tokens", 400_000)) * 2}
+        elif opt.startswith("waive_finding:"):
+            fid = opt.split(":", 1)[1]
+            s.set_finding_status(fid, "WAIVED_BY_HUMAN", reason=text or "waived by the human after reviewing both sides", actor="human")
+        elif opt == "require_fix":
+            for f in s.findings(mid):
+                if f["status"] == "DISPUTED":
+                    s.set_finding_status(f["id"], "OPEN", actor="human")
+            cfg["human_notes"] = [*cfg.get("human_notes", []), "the reviewer upheld the finding: fix it, do not dispute it again"]
         elif opt == "waive_tamper":
             cfg["_tamper_waived"] = True
             cfg["human_notes"] = [*cfg.get("human_notes", []), f"tamper waived: {text}"]
@@ -393,6 +401,9 @@ class Orchestrator:
             self._fail(mid, f"approved, but applying the patch failed: {msg[:200]}")
             return {}
         s.set_status(mid, S.COMPLETED, "approved and applied", actor="master")
+        from ..services.memory import remember
+
+        remember(d, mid)
         self._outcome(mid, "COMPLETED", None)
         s.update_mission(mid, outcome={**s.mission(mid)["outcome"], "applied": applied})
         d.bus.publish(mid, "mission.completed", "master", {"applied": applied})

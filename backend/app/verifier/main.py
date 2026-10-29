@@ -26,7 +26,7 @@ from ..sandbox.runner import LocalJailRunner
 
 
 async def _run_tests(runner: LocalJailRunner, repo: Path, scratch: Path, tag: str, selectors: list[str] | None = None,
-                     timeout: int = 180) -> dict[str, Any]:
+                     timeout: int = 180, disabled: frozenset[str] = frozenset()) -> dict[str, Any]:
     purge_pycache(repo)
     cmds = detect(repo)["detected_commands"]
     cands = [c for c in [cmds["test"], *cmds["alternatives"]] if c]
@@ -34,6 +34,9 @@ async def _run_tests(runner: LocalJailRunner, repo: Path, scratch: Path, tag: st
         return {"outcome": "NO_TESTS", "total": 0, "failed": 0, "errored": 0, "failures": [], "runner": None}
     tried = []
     for c in cands:
+        if c["runner"] in disabled:
+            tried.append(c["runner"])
+            continue
         argv = list(c["argv"])
         xml = scratch / f"junit-{tag}.xml"
         if c["runner"] == "pytest":
@@ -89,8 +92,9 @@ async def _verify(spec: dict[str, Any]) -> dict[str, Any]:
                 report["overall"] = "FAIL"
                 return report
         report["tamper_check"] = {k: v for k, v in analyze_patch(patch_text).items() if k != "files"}
-        base_run = await _run_tests(runner, base_dir, scratch, "base")
-        full_run = await _run_tests(runner, patched_dir, scratch, "patched")
+        disabled = frozenset(spec.get("disabled_tools", []))
+        base_run = await _run_tests(runner, base_dir, scratch, "base", disabled=disabled)
+        full_run = await _run_tests(runner, patched_dir, scratch, "patched", disabled=disabled)
         base_fail = {f["test_id"] for f in base_run.get("failures", [])}
         now_fail = {f["test_id"] for f in full_run.get("failures", [])}
         report["regression_check"] = {
@@ -99,7 +103,7 @@ async def _verify(spec: dict[str, Any]) -> dict[str, Any]:
             "patched_summary": {k: full_run.get(k) for k in ("total", "failed", "errored", "skipped")},
         }
         for c in spec["criteria"]:
-            report["results"].append(await _check_criterion(c, runner, patched_dir, scratch, full_run))
+            report["results"].append(await _check_criterion(c, runner, patched_dir, scratch, full_run, disabled))
         any_fail = any(r["status"] == "FAIL" for r in report["results"])
         new_regressions = bool(report["regression_check"]["new_failures"])
         if new_regressions:
@@ -117,11 +121,15 @@ async def _verify(spec: dict[str, Any]) -> dict[str, Any]:
     return report
 
 
-async def _check_criterion(c: dict[str, Any], runner: LocalJailRunner, repo: Path, scratch: Path, full_run: dict[str, Any]) -> dict[str, Any]:
+async def _check_criterion(c: dict[str, Any], runner: LocalJailRunner, repo: Path, scratch: Path, full_run: dict[str, Any],
+                           disabled: frozenset[str] = frozenset()) -> dict[str, Any]:
     v = c["verification"]
     base = {"ac_id": c["id"], "method": v["method"], "evidence": {}, "confidence": 1.0}
     m = v["method"]
     if m == "command":
+        exe = (v.get("argv") or [""])
+        if "pytest" in disabled and ("pytest" in exe):
+            return {**base, "status": "INCONCLUSIVE", "evidence": {"reason": "pytest is unavailable in this mission (disabled_tools); criterion could not be executed", "argv": exe}}
         dec = check_command(v.get("argv") or [], "verify", repo)
         if not dec.allowed or dec.argv is None:
             return {**base, "status": "INCONCLUSIVE", "evidence": {"reason": f"command rejected by sandbox policy: {dec.reason}", "argv": v.get("argv")}}
@@ -135,7 +143,7 @@ async def _check_criterion(c: dict[str, Any], runner: LocalJailRunner, repo: Pat
             p = s.split("::", 1)[0]
             if not (repo / p).exists():
                 return {**base, "status": "FAIL", "evidence": {"selectors": sels, "reason": f"{p} does not exist in the patched repository"}}
-        r = await _run_tests(runner, repo, scratch, f"sel-{c['id']}", sels)
+        r = await _run_tests(runner, repo, scratch, f"sel-{c['id']}", sels, disabled=disabled)
         ok = r["outcome"] == "GREEN" and r.get("total", 0) > 0
         return {**base, "status": "PASS" if ok else "FAIL", "evidence": {"selectors": sels, "outcome": r["outcome"], "total": r.get("total"),
                                                                        "failures": [f["test_id"] for f in r.get("failures", [])][:5], "command": r.get("command"),

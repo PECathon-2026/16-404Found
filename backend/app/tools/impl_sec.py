@@ -39,6 +39,14 @@ async def scan_patterns(ctx: ToolContext, a: ScanArgs) -> dict:
     return {"findings": items + inj, "scanned": "paths" if a.paths else "workspace"}
 
 
+async def review_quality(ctx: ToolContext, a: "NoArgs") -> dict:
+    patch, _ = await compute_patch(ctx)
+    from ..common.detect import detect
+
+    ll = detect(ctx.workspace)["conventions"].get("line_length")
+    return {"findings": scanners.quality_review(patch, ll)}
+
+
 class NoArgs(BaseModel):
     pass
 
@@ -51,6 +59,7 @@ async def audit_deps(ctx: ToolContext, a: NoArgs) -> dict:
 
 _ = git
 SPECS = [
+    ToolSpec("sec.review_quality", "Deterministic code-review heuristics on the patch (readability, consistency, test coverage).", NoArgs, review_quality),
     ToolSpec("sec.scan_secrets", "Scan for hard-coded secrets (values are masked).", ScanArgs, scan_secrets),
     ToolSpec("sec.scan_patterns", "Scan source for injection/unsafe-operation patterns and prompt-injection text.", ScanArgs, scan_patterns),
     ToolSpec("sec.audit_deps", "Dependency vulnerability audit (reports unavailable when no advisory source exists).", NoArgs, audit_deps),

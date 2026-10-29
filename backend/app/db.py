@@ -131,6 +131,11 @@ model_calls = _t(
 )
 
 
+memory_entries = _t(
+    "memory_entries", S("id", primary_key=True), S("repository_id", index=True), S("kind"), Column("text", Text), J("files"), S("source_mission_id"), S("created_at"),
+)
+
+
 class Database:
     def __init__(self, path: Path | str):
         url = "sqlite:///:memory:" if str(path) == ":memory:" else f"sqlite:///{path}"

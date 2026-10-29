@@ -31,14 +31,15 @@ class SecurityAgent:
             sec = await reg.call(ctx, "sec.scan_secrets", {})
             pat = await reg.call(ctx, "sec.scan_patterns", {})
             dep = await reg.call(ctx, "sec.audit_deps", {})
+            qual = await reg.call(ctx, "sec.review_quality", {})
             gaps = []
             scanners = [{"tool": "sec.scan_secrets", "ok": sec.ok, "tcl": sec.tool_call_id}, {"tool": "sec.scan_patterns", "ok": pat.ok, "tcl": pat.tool_call_id},
-                        {"tool": "sec.audit_deps", "ok": dep.ok, "tcl": dep.tool_call_id}]
+                        {"tool": "sec.audit_deps", "ok": dep.ok, "tcl": dep.tool_call_id}, {"tool": "sec.review_quality", "ok": qual.ok, "tcl": qual.tool_call_id}]
             for sc, r in ((("sec.scan_secrets"), sec), ("sec.scan_patterns", pat), ("sec.audit_deps", dep)):
                 if not r.ok:
                     gaps.append(f"{sc} did not run: {(r.error or {}).get('message')}")
             found: list[tuple[dict[str, Any], str]] = []
-            for r in (sec, pat):
+            for r in (sec, pat, qual):
                 for it in (r.data or {}).get("findings", []):
                     found.append((it, r.tool_call_id))
             existing = [f for f in s.findings(mission_id) if f["raised_by"] == "security" and f["source"].startswith("scanner")]

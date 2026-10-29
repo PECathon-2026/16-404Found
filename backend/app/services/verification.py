@@ -26,7 +26,8 @@ async def run_verification(deps: Deps, ctx: ToolContext) -> dict[str, Any]:
     patch_file.write_text(patch)
     criteria = [{"id": c["ac_key"], "text": c["text"], "verification": c["verification"]} for c in s.criteria(ctx.mission_id)]
     spec = {"workspace_git_dir": str(ctx.workspace), "base_commit": m["base_commit"], "patch_file": str(patch_file), "patch_sha256": sha,
-            "criteria_version": m["criteria_version"], "criteria": criteria, "scratch": str(art / "scratch")}
+            "criteria_version": m["criteria_version"], "criteria": criteria, "scratch": str(art / "scratch"),
+            "disabled_tools": list(((m["config"] or {}).get("permissions") or {}).get("disabled_tools", []))}
     spec_path, report_path = art / "spec.json", art / "report.json"
     spec_path.write_text(json.dumps(spec))
     report_path.unlink(missing_ok=True)
