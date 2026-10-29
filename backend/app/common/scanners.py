@@ -226,9 +226,9 @@ def quality_review(patch: str, line_length: int | None = None) -> list[dict[str,
         is_py = cur.endswith(".py")
         is_test = is_test_path(cur)
 
-        def add(rule: str, cat: str, why: str) -> None:
+        def add(rule: str, cat: str, why: str, cur: str = cur, lineno: int = lineno, text: str = text) -> None:
             out.append({"rule": rule, "category": cat, "cwe": None, "file": cur, "line": lineno, "severity": "LOW", "evidence": redact_line(text),
-                        "fingerprint": fingerprint(rule, cur or "", text), "recommendation": why, "confidence": 0.7, "scope": "changed"})
+                        "fingerprint": fingerprint(rule, cur, text), "recommendation": why, "confidence": 0.7, "scope": "changed"})
 
         if is_py and re.match(r"^\s*except\s*:", text):
             add("bare_except", "CODE_QUALITY", "Catch specific exceptions; a bare except hides real errors.")

@@ -1,0 +1,9 @@
+{
+  "id": "sc-4-security-review",
+  "title": "Fix SQL injection and review security",
+  "prompt": "Add find_user_by_email(conn, email) to user_service.py and verify it passes security review without injection risks.",
+  "category": "Security and Code Review",
+  "description": "Demonstrates security inspection and cross-agent critique: developer introduces SQL f-string, security agent detects CWE-89, completion gate blocks approval, developer repairs with parameterized query, re-scan confirms clean, human approves.",
+  "config": {}
+}
+

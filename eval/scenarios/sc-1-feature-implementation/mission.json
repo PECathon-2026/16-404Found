@@ -1,0 +1,9 @@
+{
+  "id": "sc-1-feature-implementation",
+  "title": "Add note search functionality",
+  "prompt": "Add a search_notes(query) function in notes.py that returns all notes where the query appears in the title or body (case-insensitive). Add tests covering matching and case-insensitivity.",
+  "category": "Feature Implementation",
+  "description": "Demonstrates feature addition: planner reconnaissance, clean implementation of search_notes(), adding new tests while preserving existing tests.",
+  "config": {}
+}
+

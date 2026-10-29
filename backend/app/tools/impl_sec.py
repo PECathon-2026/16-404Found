@@ -39,7 +39,7 @@ async def scan_patterns(ctx: ToolContext, a: ScanArgs) -> dict:
     return {"findings": items + inj, "scanned": "paths" if a.paths else "workspace"}
 
 
-async def review_quality(ctx: ToolContext, a: "NoArgs") -> dict:
+async def review_quality(ctx: ToolContext, a: NoArgs) -> dict:
     patch, _ = await compute_patch(ctx)
     from ..common.detect import detect
 

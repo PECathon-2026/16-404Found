@@ -140,7 +140,6 @@ def check_sc2(r: Run) -> list[Check]:
 
 def check_sc3(r: Run) -> list[Check]:
     st, m = r.st, r.st.mission(r.mid)
-    t = r.types()
     runs = [x for x in st.test_runs(r.mid) if x["kind"] == "TEST"]
     reds = [x for x in runs if x["outcome"] == "RED"]
     i1 = r.first("test.failed", lambda p: p.get("kind") == "TEST")

@@ -158,8 +158,7 @@ async def test_same_size_edits_in_the_same_second_never_run_stale_bytecode(regis
     left Python executing the OLD code. Flip a same-size edit repeatedly, building + testing between each."""
     tester = await make_ctx(calc_files, agent="tester")
     dev = await make_ctx(calc_files)
-    dev.workspace = tester.workspace  # same workspace, two agents
-    dev.mission_id = tester.mission_id
+    dev.workspace, dev.mission_id, dev.base_commit = tester.workspace, tester.mission_id, tester.base_commit  # same workspace AND repo, two agents
     state = "a + b"
     for _ in range(6):
         new = "a - b" if state == "a + b" else "a + b"
