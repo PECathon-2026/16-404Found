@@ -326,6 +326,13 @@ def build_router(c: Container) -> APIRouter:
         c.runner.start(mid)
         return mission_detail(mid)
 
+    @r.post("/missions/{mid}/retry")
+    async def retry_mission(mid: str) -> dict[str, Any]:
+        m = get_mission(mid)
+        new_m = st.create_mission(m["repository_id"], m["title"], m["request"], m["config"], m["mode"])
+        c.runner.start(new_m["id"])
+        return mission_detail(new_m["id"])
+
     def control(fn: Any, mid: str) -> dict[str, Any]:
         get_mission(mid)
         try:
@@ -432,6 +439,50 @@ def build_router(c: Container) -> APIRouter:
             files.append({**f, "original": orig, "modified": mod, "unified": unified})
         return {"patch_sha256": sha, "files": files}
 
+    @r.get("/missions/{mid}/files")
+    async def files(mid: str) -> dict[str, Any]:
+        """Real file tree of the mission workspace, flagged with the files the patch touches (repository explorer)."""
+        ctx, m = await ctx_for(mid)
+        if ctx is None or not Path(m["workspace_path"]).exists():
+            return {"branch": None, "files": []}
+        from ...common.detect import SKIP
+
+        patch, _ = await compute_patch(ctx)
+        changed = {f["path"]: f["change_type"] for f in analyze_patch(patch)["files"]}
+        out = []
+        for p in sorted(ctx.workspace.rglob("*")):
+            rel = p.relative_to(ctx.workspace)
+            if any(part in SKIP for part in rel.parts) or p.is_symlink() or not p.is_file():
+                continue
+            out.append({"path": str(rel), "size": p.stat().st_size, "change": changed.get(str(rel))})
+            if len(out) >= 1500:
+                break
+        for path, ch in changed.items():  # deleted files are not on disk but belong in the explorer
+            if ch == "DELETE":
+                out.append({"path": path, "size": 0, "change": "DELETE"})
+        repo = d.db.get(repositories, m["repository_id"])
+        return {"branch": (repo or {}).get("default_branch"), "files": out}
+
+    @r.get("/missions/{mid}/files/content")
+    async def file_content(mid: str, path: str) -> dict[str, Any]:
+        ctx, m = await ctx_for(mid)
+        if ctx is None:
+            raise err(404, "NOT_FOUND", "no workspace yet")
+        from ...sandbox.pathjail import PathViolation, resolve_in
+
+        try:
+            p = resolve_in(ctx.workspace, path)
+        except PathViolation as e:
+            raise err(403, "PATH_DENIED", str(e)) from None
+        if not p.is_file():
+            raise err(404, "NOT_FOUND", "not a file")
+        raw = p.read_bytes()[:200_000]
+        if b"\x00" in raw[:2048]:
+            return {"path": path, "binary": True, "content": ""}
+        from ...common.redact import redact
+
+        return {"path": path, "binary": False, "content": redact(raw.decode("utf-8", "replace"))[0]}
+
     @r.get("/missions/{mid}/patch", response_class=PlainTextResponse)
     async def patch(mid: str) -> str:
         ctx, _ = await ctx_for(mid)
@@ -443,6 +494,17 @@ def build_router(c: Container) -> APIRouter:
     async def test_runs(mid: str) -> dict[str, Any]:
         get_mission(mid)
         return {"runs": st.test_runs(mid)}
+
+    @r.get("/missions/{mid}/test-runs/{run_id}/cases")
+    async def test_cases(mid: str, run_id: str) -> dict[str, Any]:
+        """Per-test results (pytest/junit only). `available=false` means the runner did not report individual passes."""
+        get_mission(mid)
+        if "/" in run_id or ".." in run_id:
+            raise err(404, "NOT_FOUND", "run not found")
+        p = d.settings.artifacts_dir / mid / f"cases-{run_id}.json"
+        if not p.exists():
+            return {"available": False, "cases": []}
+        return {"available": True, "cases": json.loads(p.read_text())}
 
     @r.get("/missions/{mid}/findings")
     async def findings(mid: str, status: str | None = None, severity: str | None = None) -> dict[str, Any]:

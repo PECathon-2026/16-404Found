@@ -1,7 +1,7 @@
 "use client";
 import { Ban, GitBranch, Pause, Play, Wifi, WifiOff, AlertTriangle, ExternalLink, Sparkles, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import React, { Suspense, useCallback, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBoundary, ErrorCard, Mono, Skeleton, Tabs, Github } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
@@ -9,6 +9,7 @@ import { shortId } from "@/lib/format";
 import type { DevEvent, MissionDetail } from "@/lib/types";
 import { useMissionLive } from "@/lib/useMission";
 import { AgentCard, AgentNetworkGraph, MetricsPanel } from "../agents/agents";
+import { AgentGuild } from "../cosmic/AgentGuild";
 import { MissionStatusBadge } from "../missions/status";
 import { ActivityFeed } from "./ActivityFeed";
 import { ApprovalPanel, HumanRequestCard } from "./ApprovalPanel";
@@ -30,6 +31,7 @@ function Keyed() {
 }
 
 function Workspace({ missionId }: { missionId: string }) {
+  const router = useRouter();
   const live = useMissionLive(missionId);
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as Tab) || "activity";
@@ -107,7 +109,8 @@ function Workspace({ missionId }: { missionId: string }) {
               {tab === "diff" && <DiffPanel missionId={d.id} diffs={live.diffs} loading={live.loading} />}
               {tab === "tests" && <TestsPanel runs={live.tests} loading={live.loading} />}
               {tab === "security" && <SecurityPanel missionId={d.id} findings={live.findings} loading={live.loading} onChanged={() => void live.refresh()} />}
-              {tab === "network" && (
+              {tab === "network" && (<div>
+                <div className="p-3"><AgentGuild detail={d} events={events} live={live.connected && !replayEvents} selected={agent} onSelect={(a) => setAgent(a)} /></div>
                 <AgentNetworkGraph
                   detail={d}
                   messages={live.messages}
@@ -115,7 +118,7 @@ function Workspace({ missionId }: { missionId: string }) {
                   selectedAgent={agent}
                   onSelectAgent={(a) => { setAgent(a); setTab("activity"); }}
                 />
-              )}
+              </div>)}
               {tab === "timeline" && <div><MissionTimeline events={events} />{!active && <div className="border-t border-line p-4"><ExecutionReplay missionId={d.id} onFrame={onFrame} /></div>}</div>}
               {tab === "report" && <ReportPanel d={d} onChanged={() => void live.refresh()} />}
             </ErrorBoundary></Card>
@@ -162,6 +165,24 @@ function Workspace({ missionId }: { missionId: string }) {
                           Demo Scenarios →
                         </Link>
                       </div>
+                    </div>
+                    <div className="pt-2 border-t border-line/60">
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        className="w-full text-xs justify-center"
+                        onClick={async () => {
+                          try {
+                            const res = await api.missions.retry(d.id);
+                            router.push(`/missions/${res.id}`);
+                          } catch (e) {
+                            alert("Retry error: " + (e as Error).message);
+                          }
+                        }}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                        Retry Mission with Autonomous Zero-Quota Fallback
+                      </Button>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-line/60 text-[11px]">
                       <a href="https://platform.openai.com/settings/organization/billing" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-fg3 hover:text-fg underline">
