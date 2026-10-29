@@ -84,9 +84,9 @@ export function RepositoryConnect({ onConnected }: { onConnected: (r: Repository
           {parsed && <Badge tone="success" icon={<Github className="h-3 w-3" />}>{parsed[1]}/{parsed[2].replace(/\.git$/, "")}</Badge>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Branch (optional)" hint="Defaults to the repository's default branch"><input name="git-branch" autoComplete="off" data-1p-ignore data-lpignore="true" className={inputCls} value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" /></Field>
-            <Field label="Access token (private repos / push)" hint="Used for this clone only. Never stored or logged.">
+            <Field label="Access token (private repos / push)" hint="Leave empty for public repos. Used for private repos or PR creation.">
               <div className="relative"><Lock className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-fg3" aria-hidden />
-                <input className={`${inputCls} pl-8`} type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="optional" /></div>
+                <input name="devpilot-pat" className={`${inputCls} pl-8`} type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" value={token} onChange={(e) => setToken(e.target.value)} placeholder="leave blank for public repos" /></div>
             </Field>
           </div>
         </>

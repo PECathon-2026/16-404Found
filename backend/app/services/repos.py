@@ -62,7 +62,7 @@ async def import_repo(deps: Deps, source_type: str, source_ref: str, name: str |
         local = s.repos_dir / rid
         local.parent.mkdir(parents=True, exist_ok=True)
         tok = token or (s.github_token or None)
-        args = ["clone", "-q", "--depth", "50"] + (["--branch", branch.strip()] if branch and branch.strip() else []) + [url, str(local)]
+        args = ["clone", "-q", "--depth", "1"] + (["--branch", branch.strip()] if branch and branch.strip() else []) + [url, str(local)]
         try:
             await git(local.parent, *args, env_extra=auth_env(tok) if gh else None, timeout=240)
         except GitError as e:

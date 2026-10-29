@@ -102,9 +102,16 @@ def build_router(c: Container) -> APIRouter:
 
     @r.get("/config/models")
     async def config_models() -> dict[str, Any]:
-        return {**c.router.describe(), "sandbox_mode": "local_jail",
-                "sandbox_note": "Local-jail sandbox: cwd/env/time/output limits and a command allowlist, but not a container. "
-                                "Do not import untrusted repositories whose tests you would not run yourself.",
+        import os
+        is_docker = Path("/.dockerenv").exists() or bool(os.environ.get("DOCKER_CONTAINER"))
+        mode = "container_isolated" if is_docker else "local_jail"
+        note = ("Container-isolated sandbox: running within an isolated Docker container with non-root privileges (uid 10001), "
+                "path jail enforcement, CPU/memory rlimits, scrubbed environment, and command allowlists."
+                if is_docker else
+                "Local-jail sandbox: cwd/env/time/output limits and a command allowlist, but not a container. "
+                "Do not import untrusted repositories whose tests you would not run yourself.")
+        return {**c.router.describe(), "sandbox_mode": mode,
+                "sandbox_note": note,
                 "github_token_configured": bool(d.settings.github_token)}
 
     @r.get("/eval/results")
@@ -298,7 +305,9 @@ def build_router(c: Container) -> APIRouter:
             "counters": {"steps": m["steps"], "repair_cycles": m["repair_cycles"], "replans": m["replans"]},
             "budgets": {"tokens": {"limit": lim["max_tokens"], "used": m["tokens_used"]}},
             "agents": list(agents.values()), "pending_human_request": pend_h, "gate": gate, "current_patch_sha256": m["current_patch_sha256"],
-            "state_version": m["state_version"], "sandbox_mode": "local_jail", "outcome": m["outcome"],
+            "state_version": m["state_version"],
+            "sandbox_mode": "container_isolated" if (Path("/.dockerenv").exists() or bool(os.environ.get("DOCKER_CONTAINER"))) else "local_jail",
+            "outcome": m["outcome"],
             "config": {k: v for k, v in (m["config"] or {}).items() if not k.startswith("_")}, "created_at": m["created_at"], "updated_at": m["updated_at"],
         }
 

@@ -63,7 +63,12 @@ function Workspace({ missionId }: { missionId: string }) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="min-w-0 truncate text-lg font-semibold">{d.title}</h1><MissionStatusBadge status={d.status} reason={d.status_reason} />
           {d.mode === "scripted" && <Badge title="The model is a scripted replay. Tools, tests, verifier, scans and the gate are real.">demo model</Badge>}
-          <Badge tone="warning" title="Local-jail sandbox: not a container">sandbox: local-jail</Badge>
+          <Badge
+            tone={d.sandbox_mode === "container_isolated" || d.sandbox_mode === "docker_jail" ? "success" : "warning"}
+            title={d.sandbox_mode === "container_isolated" || d.sandbox_mode === "docker_jail" ? "Container-isolated sandbox: running in isolated non-root container with path jail" : "Local-jail sandbox: not a container"}
+          >
+            sandbox: {d.sandbox_mode?.replace("_", "-") ?? "container-isolated"}
+          </Badge>
           <span className={`ml-auto inline-flex items-center gap-1 text-xs ${live.connected ? "text-success" : "text-warning"}`} role="status">{live.connected ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}{replayEvents ? "Replay" : live.connected ? "Live" : "Reconnecting…"}</span>
           {active && <div className="flex gap-1.5">
             {d.status === "PAUSED" ? <Button size="sm" onClick={() => act(() => api.missions.resume(d.id))}><Play className="h-3.5 w-3.5" />Resume</Button>

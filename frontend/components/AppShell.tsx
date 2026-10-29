@@ -1,5 +1,5 @@
 "use client";
-import { Activity, ClipboardCheck, FileText, GitBranch, History, LayoutDashboard, ListChecks, Moon, Network, Settings, ShieldAlert, Sun } from "lucide-react";
+import { Activity, ClipboardCheck, FileText, GitBranch, History, LayoutDashboard, ListChecks, Moon, Network, Settings, ShieldAlert, ShieldCheck, Sun } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { Suspense } from "react";
@@ -76,7 +76,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-30 flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-line bg-canvas/90 px-4 py-2 backdrop-blur">
           <div className="flex items-center gap-2 md:hidden"><div className="grid h-7 w-7 place-items-center rounded-md bg-accent text-accent-fg"><Activity className="h-4 w-4" aria-hidden /></div><span className="text-sm font-semibold">DevPilot</span></div>
           <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-            {cfg && <Badge tone="warning" icon={<ShieldAlert className="h-3 w-3" />} title={cfg.sandbox_note}>sandbox: {cfg.sandbox_mode.replace("_", "-")}</Badge>}
+            {cfg && (
+              <Badge
+                tone={cfg.sandbox_mode === "container_isolated" || cfg.sandbox_mode === "docker_jail" ? "success" : "warning"}
+                icon={cfg.sandbox_mode === "container_isolated" || cfg.sandbox_mode === "docker_jail" ? <ShieldCheck className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}
+                title={cfg.sandbox_note}
+              >
+                sandbox: {cfg.sandbox_mode.replace("_", "-")}
+              </Badge>
+            )}
             {cfg && <Badge tone={cfg.live_available ? "success" : "neutral"} title={cfg.live_available ? "A live model provider is configured" : "No model key configured: only scripted demo missions can run"}>{cfg.live_available ? "live model" : "demo model only"}</Badge>}
             <button onClick={toggle} aria-label="Toggle light/dark theme" className="rounded p-1.5 text-fg2 hover:bg-hover md:hidden"><ThemeIcon /></button>
           </div>
