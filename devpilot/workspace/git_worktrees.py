@@ -2,30 +2,37 @@
 
 Features:
 - Worktree layout: `runs/<mission_id>/ws/main`, `ws/baseline`, `ws/cand-A..C`, `ws/scratch-*`.
-- Non-git target support: auto-copies respecting .gitignore, initializes git, commits baseline.
-- Dirty target preservation: snapshots uncommitted changes via `git stash create` without touching the user tree.
+- Non-git target support: auto-copies respecting .gitignore, initializes git, applies changes back.
+- Dirty target preservation: snapshots uncommitted changes into main & baseline, cleanly isolated.
 - Temporary index computation for tree_sha (`GIT_INDEX_FILE`), keeping user index untouched.
 - Hunk parser (`hunks`): parses `git diff -U0` into structured stable hunk IDs (H1, H2, ...).
-- Checkpoints & rollback: commits inside worktrees, performs clean rollbacks.
+- Checkpoints & rollback: commits inside worktrees with DevPilot env identity (never touches user config).
 - Tournament adoption (`adopt`): applies winning candidate tree to main and commits.
 - Fast-forward apply (`apply_to_target`): verifies clean target, merges `--ff-only`.
+- Cleanup: removes all worktrees and prunes `.git/worktrees` entries.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import os
 import re
 import shutil
 import uuid
 from pathlib import Path
-from typing import Any
 
-from devpilot.core.ports import Workspaces
+from devpilot.core.ports import Hunk, Workspaces
 
-# Regex to parse unified diff headers and hunk lines
-DIFF_FILE_HEADER_RE = re.compile(r"^diff --git a/(.+?) b/(.+?)$", re.MULTILINE)
+DEVPILOT_GIT_ENV: dict[str, str] = {
+    "GIT_AUTHOR_NAME": "DevPilot",
+    "GIT_AUTHOR_EMAIL": "devpilot@localhost",
+    "GIT_COMMITTER_NAME": "DevPilot",
+    "GIT_COMMITTER_EMAIL": "devpilot@localhost",
+}
+
+DIFF_FILE_HEADER_RE = re.compile(r'^diff --git (?:"a/(.+?)"|a/(.+?)) (?:"b/(.+?)"|b/(.+?))$', re.MULTILINE)
 HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -38,6 +45,7 @@ async def _run_git(
     """Execute git subprocess directly without shell, returning exit_code, stdout, stderr."""
     run_env = os.environ.copy()
     run_env["GIT_TERMINAL_PROMPT"] = "0"
+    run_env.update(DEVPILOT_GIT_ENV)
     if env:
         run_env.update(env)
 
@@ -61,9 +69,21 @@ async def _run_git(
     return exit_code, stdout_str, stderr_str
 
 
-def parse_diff_hunks(diff_text: str) -> list[dict[str, Any]]:
+def _clean_path(p: str) -> str:
+    """Normalize a path from git diff output, handling quotes and prefixes."""
+    p = p.strip()
+    if p.startswith('"') and p.endswith('"'):
+        p = p[1:-1]
+    if p.startswith("b/"):
+        return p[2:]
+    if p.startswith("a/"):
+        return p[2:]
+    return p
+
+
+def parse_diff_hunks(diff_text: str) -> list[Hunk]:
     """Parse `git diff -U0` output into structured stable hunk dictionaries."""
-    hunks: list[dict[str, Any]] = []
+    hunks: list[Hunk] = []
     current_file: str | None = None
     lines = diff_text.splitlines(keepends=True)
     i = 0
@@ -74,15 +94,27 @@ def parse_diff_hunks(diff_text: str) -> list[dict[str, Any]]:
         if line.startswith("diff --git "):
             m = DIFF_FILE_HEADER_RE.match(line.strip())
             if m:
-                current_file = m.group(2)
+                # Group 3 or 4 corresponds to b/ target path
+                current_file = _clean_path(m.group(3) or m.group(4) or m.group(1) or m.group(2) or "")
+            i += 1
+            continue
+
+        if line.startswith("rename to "):
+            current_file = _clean_path(line[10:])
             i += 1
             continue
 
         if line.startswith("+++ "):
-            # If +++ /dev/null, file was deleted
             target = line[4:].strip()
-            if target != "/dev/null" and target.startswith("b/"):
-                current_file = target[2:]
+            if target != "/dev/null":
+                current_file = _clean_path(target)
+            i += 1
+            continue
+
+        if line.startswith("--- ") and current_file is None:
+            target = line[4:].strip()
+            if target != "/dev/null":
+                current_file = _clean_path(target)
             i += 1
             continue
 
@@ -103,15 +135,15 @@ def parse_diff_hunks(diff_text: str) -> list[dict[str, Any]]:
 
                 hunk_id = f"H{hunk_index}"
                 hunks.append(
-                    {
-                        "id": hunk_id,
-                        "path": current_file or "unknown",
-                        "old_start": old_start,
-                        "old_len": old_len,
-                        "new_start": new_start,
-                        "new_len": new_len,
-                        "patch": "".join(patch_lines),
-                    }
+                    Hunk(
+                        id=hunk_id,
+                        path=current_file or "unknown",
+                        old_start=old_start,
+                        old_len=old_len,
+                        new_start=new_start,
+                        new_len=new_len,
+                        patch="".join(patch_lines),
+                    )
                 )
                 hunk_index += 1
                 continue
@@ -126,23 +158,26 @@ class GitWorkspaces(Workspaces):
 
     def __init__(self, runs_dir: Path | str = "runs") -> None:
         self.runs_dir = Path(runs_dir)
+        self.target: Path = Path(".")
         self.repo: Path = Path(".")
         self.mission_id: str = ""
         self.base_dir: Path = Path(".")
         self.baseline_commit: str = ""
+        self.base_ref: str = ""
         self.dirty_at_start: bool = False
         self.is_synthetic_git: bool = False
+        self.original_target_hashes: dict[str, str] = {}
         self._worktrees: dict[str, Path] = {}
 
     async def create_main(self, repo: Path, mission_id: str) -> Path:
         """Initialize worktree layout, preparing 'main' worktree for the mission."""
-        self.repo = repo.resolve()
+        self.target = repo.resolve()
         self.mission_id = mission_id
         self.base_dir = (self.runs_dir / mission_id / "ws").resolve()
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1. Handle non-git target repository
-        if not (self.repo / ".git").exists():
+        # 1. Handle non-git target repository (R2)
+        if not (self.target / ".git").exists():
             synthetic_repo = (self.runs_dir / mission_id / "synthetic_repo").resolve()
             if synthetic_repo.exists():
                 shutil.rmtree(synthetic_repo)
@@ -151,10 +186,16 @@ class GitWorkspaces(Workspaces):
                 ignored = {".git", "__pycache__", ".pytest_cache", ".venv", "node_modules"}
                 return set(names) & ignored
 
-            shutil.copytree(self.repo, synthetic_repo, ignore=_ignore_func)
+            shutil.copytree(self.target, synthetic_repo, ignore=_ignore_func)
+
+            # Record initial file hashes of target to verify integrity at apply time
+            self.original_target_hashes.clear()
+            for p in self.target.rglob("*"):
+                if p.is_file():
+                    rel = p.relative_to(self.target).as_posix()
+                    self.original_target_hashes[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
+
             await _run_git(synthetic_repo, ["init"])
-            await _run_git(synthetic_repo, ["config", "user.name", "DevPilot"])
-            await _run_git(synthetic_repo, ["config", "user.email", "devpilot@agentic.ai"])
             await _run_git(synthetic_repo, ["add", "-A"])
             await _run_git(synthetic_repo, ["commit", "-m", "devpilot baseline"])
 
@@ -162,32 +203,31 @@ class GitWorkspaces(Workspaces):
             self.is_synthetic_git = True
             _, head_sha, _ = await _run_git(self.repo, ["rev-parse", "HEAD"])
             self.baseline_commit = head_sha.strip()
-            base_ref = self.baseline_commit
+            self.base_ref = self.baseline_commit
         else:
-            # 2. Check if git target has uncommitted changes
-            _, status_out, _ = await _run_git(self.repo, ["status", "--porcelain"])
+            self.repo = self.target
+            self.is_synthetic_git = False
             _, head_sha, _ = await _run_git(self.repo, ["rev-parse", "HEAD"])
             self.baseline_commit = head_sha.strip()
 
+            # 2. Check if git target has uncommitted changes (R3)
+            _, status_out, _ = await _run_git(self.repo, ["status", "--porcelain"])
             if status_out.strip():
-                # Target is dirty: snapshot changes into a commit object without modifying index/tree
+                self.dirty_at_start = True
+                # Snapshot changes via temporary stash without affecting working tree
                 _, stash_sha, _ = await _run_git(self.repo, ["stash", "create"])
                 stash_sha = stash_sha.strip()
                 if stash_sha:
-                    self.dirty_at_start = True
-                    base_ref = stash_sha
+                    self.base_ref = stash_sha
                 else:
-                    base_ref = self.baseline_commit
+                    self.base_ref = self.baseline_commit
             else:
-                base_ref = self.baseline_commit
-
-        # Ensure git user identity is configured
-        await _run_git(self.repo, ["config", "user.name", "DevPilot"], check=False)
-        await _run_git(self.repo, ["config", "user.email", "devpilot@agentic.ai"], check=False)
+                self.dirty_at_start = False
+                self.base_ref = self.baseline_commit
 
         # 3. Create mission branch devpilot/<mission_id>
         branch_name = f"devpilot/{mission_id}"
-        await _run_git(self.repo, ["branch", "-f", branch_name, base_ref])
+        await _run_git(self.repo, ["branch", "-f", branch_name, self.base_ref])
 
         # 4. Create main worktree
         main_path = self.base_dir / "main"
@@ -201,23 +241,23 @@ class GitWorkspaces(Workspaces):
         return main_path
 
     async def create_baseline(self) -> Path:
-        """Create isolated read-only baseline worktree detached at original HEAD."""
+        """Create isolated read-only baseline worktree detached at base_ref (R3)."""
         baseline_path = self.base_dir / "baseline"
         if baseline_path.exists():
             await _run_git(self.repo, ["worktree", "remove", "--force", str(baseline_path)], check=False)
             if baseline_path.exists():
                 shutil.rmtree(baseline_path, ignore_errors=True)
 
-        # Detach worktree at baseline_commit
+        # Detach worktree at base_ref (matching main's starting state)
         await _run_git(
             self.repo,
-            ["worktree", "add", "--detach", str(baseline_path), self.baseline_commit],
+            ["worktree", "add", "--detach", str(baseline_path), self.base_ref],
         )
         self._worktrees["baseline"] = baseline_path
         return baseline_path
 
     async def fork(self, name: str, from_ref: str = "main") -> Path:
-        """Fork an isolated sibling worktree (cand-A..C or scratch-*) from an existing ref."""
+        """Fork an isolated sibling worktree from an existing ref (copies state via read-tree)."""
         from_path = await self.path(from_ref)
         fork_path = self.base_dir / name
 
@@ -226,7 +266,6 @@ class GitWorkspaces(Workspaces):
             if fork_path.exists():
                 shutil.rmtree(fork_path, ignore_errors=True)
 
-        # Snapshot from_ref working tree to commit if uncommitted
         _, current_head, _ = await _run_git(from_path, ["rev-parse", "HEAD"])
         commit_ref = current_head.strip()
 
@@ -234,7 +273,6 @@ class GitWorkspaces(Workspaces):
         await _run_git(self.repo, ["worktree", "add", "--detach", str(fork_path), commit_ref])
 
         # Copy any uncommitted changes from from_path to fork_path
-        # to ensure perfect fork state
         tree_sha = await self.tree_sha(from_ref)
         await _run_git(fork_path, ["read-tree", tree_sha])
         await _run_git(fork_path, ["checkout-index", "-a", "-f"])
@@ -259,9 +297,7 @@ class GitWorkspaces(Workspaces):
 
         try:
             temp_env = {"GIT_INDEX_FILE": str(temp_index)}
-            # Stage all changes into temporary index
             await _run_git(ws_path, ["add", "-A"], env=temp_env)
-            # Write tree from temporary index
             _, out, _ = await _run_git(ws_path, ["write-tree"], env=temp_env)
             return out.strip()
         finally:
@@ -277,12 +313,12 @@ class GitWorkspaces(Workspaces):
 
         _, diff_out, _ = await _run_git(
             ws_path,
-            ["diff", tree_against, tree_ref],
+            ["-c", "core.quotepath=false", "diff", tree_against, tree_ref],
             check=False,
         )
         return diff_out
 
-    async def hunks(self, ref: str = "main") -> list[dict[str, Any]]:
+    async def hunks(self, ref: str = "main") -> list[Hunk]:
         """Parse git diff -U0 against baseline into structured hunks with stable IDs."""
         tree_ref = await self.tree_sha(ref)
         tree_against = await self.tree_sha("baseline")
@@ -290,7 +326,7 @@ class GitWorkspaces(Workspaces):
 
         _, diff_out, _ = await _run_git(
             ws_path,
-            ["diff", "-U0", tree_against, tree_ref],
+            ["-c", "core.quotepath=false", "diff", "-U0", tree_against, tree_ref],
             check=False,
         )
         return parse_diff_hunks(diff_out)
@@ -317,7 +353,6 @@ class GitWorkspaces(Workspaces):
         main_path = await self.path("main")
         cand_tree = await self.tree_sha(candidate)
 
-        # Apply candidate tree directly to main's index and checkout
         await _run_git(main_path, ["read-tree", cand_tree])
         await _run_git(main_path, ["checkout-index", "-a", "-f"])
         await _run_git(main_path, ["clean", "-fd"])
@@ -325,17 +360,57 @@ class GitWorkspaces(Workspaces):
         await self.checkpoint(f"Adopt tournament candidate '{candidate}'", ref="main")
 
     async def apply_to_target(self) -> str:
-        """Fast-forward merge mission branch into target repo. Refuses on dirty target."""
-        # 1. Refuse if target repo is dirty
+        """Apply mission changes to the target repository.
+
+        For Git repos: fast-forward merge into target HEAD; refuses if target is dirty.
+        For non-git repos: copies diff over to the user's folder if unmodified.
+        """
+        # 1. Non-git target handling (R2)
+        if self.is_synthetic_git:
+            current_hashes: dict[str, str] = {}
+            for p in self.target.rglob("*"):
+                if p.is_file():
+                    rel = p.relative_to(self.target).as_posix()
+                    current_hashes[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
+
+            if current_hashes != self.original_target_hashes:
+                raise RuntimeError(
+                    "Cannot apply changes: Non-git target directory was modified externally since mission start."
+                )
+
+            main_path = await self.path("main")
+
+            # Determine deleted files
+            baseline_path = await self.path("baseline")
+            base_files = {
+                p.relative_to(baseline_path).as_posix() for p in baseline_path.rglob("*") if p.is_file()
+            }
+            main_files = {p.relative_to(main_path).as_posix() for p in main_path.rglob("*") if p.is_file()}
+
+            deleted_files = base_files - main_files
+            for rel_del in deleted_files:
+                target_del = self.target / rel_del
+                if target_del.exists():
+                    target_del.unlink()
+
+            # Copy all files from main to target
+            for rel_main in main_files:
+                src_file = main_path / rel_main
+                dst_file = self.target / rel_main
+                dst_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_file, dst_file)
+
+            return await self.tree_sha("main")
+
+        # 2. Git target handling
         _, status_out, _ = await _run_git(self.repo, ["status", "--porcelain"])
-        if status_out.strip():
+        if status_out.strip() or self.dirty_at_start:
             raise RuntimeError(
                 "Cannot apply changes: Target repository contains uncommitted modifications.\n"
                 "Please commit or stash your changes before applying the mission change."
             )
 
         branch_name = f"devpilot/{self.mission_id}"
-        # 2. Fast-forward merge mission branch into target HEAD
         exit_code, stdout, stderr = await _run_git(
             self.repo,
             ["merge", "--ff-only", branch_name],
@@ -349,3 +424,17 @@ class GitWorkspaces(Workspaces):
 
         _, head_sha, _ = await _run_git(self.repo, ["rev-parse", "HEAD"])
         return head_sha.strip()
+
+    async def cleanup(self, keep_branch: bool = True) -> None:
+        """Remove all mission worktrees and prune worktree registrations (R4)."""
+        for path in list(self._worktrees.values()):
+            if path.exists():
+                await _run_git(self.repo, ["worktree", "remove", "--force", str(path)], check=False)
+                if path.exists():
+                    shutil.rmtree(path, ignore_errors=True)
+        await _run_git(self.repo, ["worktree", "prune"], check=False)
+        self._worktrees.clear()
+
+        if not keep_branch and self.mission_id:
+            branch_name = f"devpilot/{self.mission_id}"
+            await _run_git(self.repo, ["branch", "-D", branch_name], check=False)

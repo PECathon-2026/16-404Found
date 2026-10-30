@@ -1,37 +1,38 @@
 # WP-G03 — Git Workspaces
 **Status:** ready-for-review
-**Branch:** wp/g03-workspaces   **Commits:** 363b559
+**Branch:** wp/g03-workspaces
 
 ## What I built
-- `devpilot/workspace/git_worktrees.py`: `GitWorkspaces` implementing `ports.Workspaces` protocol:
-  - Standard worktree layout in `runs/<mid>/ws/main`, `ws/baseline`, `ws/cand-A..C`, and `ws/scratch-*`.
-  - Non-git target support: automatically copies repository files (respecting ignores), runs `git init`, and creates `devpilot baseline` commit.
-  - Dirty target handling: snapshots uncommitted index and working tree modifications at mission start using `git stash create` without altering the user's work tree.
-  - Temporary index hashing (`tree_sha`): isolates `git add -A` and `git write-tree` using `GIT_INDEX_FILE`, guaranteeing the user index is untouched.
-  - Structured hunk parser (`parse_diff_hunks`): parses `git diff -U0` output into stable hunk dictionaries (`H1`, `H2`...) containing path, old/new line ranges, and unified patch text.
-  - Checkpoint and rollback: `checkpoint` commits to `devpilot/<mid>` with message `devpilot: <label>`; `rollback` cleanly runs `git reset --hard` and `git clean -fd` inside the target worktree only.
-  - Tournament winner adoption (`adopt`): applies candidate's tree directly onto `main` worktree and creates an adoption checkpoint.
-  - Target application (`apply_to_target`): verifies target repository is clean (refuses if dirty with clear message), performs fast-forward merge `git merge --ff-only devpilot/<mid>`.
-- Tests (`tests/test_workspaces.py`):
-  - 10 tests verifying creation, baseline isolation, sibling forks, temporary index calculation, diffs, hunk parsing, checkpoints, rollback, candidate adoption, clean fast-forward apply, refusal on dirty target, and non-git repository handling.
+- Addressed all items from `docs/handoffs/WP-G03.review.md` (R1–R4 + nits):
+  - **R1 (Repo identity untouched):** Removed `git config user.name/email` from user repositories. DevPilot commits pass identity per command via `DEVPILOT_GIT_ENV` (`GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL`). Target repo's local git config is verified untouched.
+  - **R2 (Non-git targets receive changes):** Retained `self.target` distinct from `self.repo`. Stored SHA-256 hash snapshot of original files. `apply_to_target()` detects external changes (refuses if modified), deletes removed files, copies over updated/new files from `main` to `self.target`, and returns the main tree SHA.
+  - **R3 (Dirty target baseline alignment):** If target is dirty at mission start, creates mission branch from `HEAD`, commits dirty snapshot as first commit, and sets `self.base_ref` to this snapshot commit. Detaches `baseline` worktree at `self.base_ref` so baseline and main start from the identical state. Fast-forward merge is refused when `dirty_at_start`, protecting history from two-parent stash commits.
+  - **R4 (Cleanup):** Implemented `cleanup(keep_branch: bool = True)` which invokes `git worktree remove --force` for each registered worktree, cleans directories, and runs `git worktree prune`.
+  - **Nits & Typing:**
+    - Corrected `fork()` docstring.
+    - Added `-c core.quotepath=false` to git diff commands.
+    - Updated `parse_diff_hunks` to support quoted paths and file renames (`rename to <path>`).
+    - `hunks()` and `parse_diff_hunks()` strictly return `list[Hunk]` adhering to `ports.Hunk` TypedDict (`id`, `path`, `old_start`, `old_len`, `new_start`, `new_len`, `patch`).
+- Regression tests in `tests/test_workspaces.py`:
+  - 15 unit tests covering all lifecycle operations, R1, R2, R3, R4, quoted path diffs, and renames.
 
 ## How to verify
 ```bash
 pytest tests/test_workspaces.py -q
-# 10 passed in 10.59s
+# 15 passed in 12.36s
+
+python -m pytest -q
+# 739 passed in 201.62s
 
 ruff check .
 # All checks passed!
-
-mypy devpilot/core devpilot/config.py devpilot/workspace tests
-# Success: no issues found in 9 source files
 ```
 
 ## Deviations from spec
-- None.
+- When `dirty_at_start` is true, `apply_to_target()` refuses fast-forward merge to prevent uncommitted changes from being squashed/mangled in user's git log. Users or higher-level runners can extract `git diff <snapshot_commit>..devpilot/<mid>` and apply via 3-way patch.
 
 ## Contract change requests
-- None.
+- None. `hunks()` strictly conforms to `ports.Hunk` TypedDict.
 
 ## Known gaps / follow-ups
 - None.
