@@ -183,3 +183,32 @@ async def test_push_without_flag_never_pushes(client, tmp_path):
     done = await wait_status(client, m["id"], {"COMPLETED", "FAILED"})
     assert done["status"] == "COMPLETED" and "pushed" not in done["outcome"]["applied"] and done["outcome"]["applied"]["branch"].startswith("devpilot/")
     assert _git(remote, "branch", "--format=%(refname:short)").split() == ["main"], "nothing may be pushed unless the approval opted in"
+
+
+async def test_file_tree_and_content_are_real_jailed_and_redacted(client):
+    created = await client.post("/api/v1/demo/missions", json={"scenario_id": "sc-4-security"})
+    mid = created.json()["id"]
+    j = await wait_status(client, mid, {"AWAITING_APPROVAL", "FAILED"})
+    assert j["status"] == "AWAITING_APPROVAL"
+    tree = (await client.get(f"/api/v1/missions/{mid}/files")).json()
+    by = {f["path"]: f for f in tree["files"]}
+    assert by["users.py"]["change"] == "MODIFY" and by["tests/test_email.py"]["change"] == "ADD" and by["README.md"]["change"] is None
+    assert not any(p.startswith(".git") for p in by)
+    ok = (await client.get(f"/api/v1/missions/{mid}/files/content", params={"path": "users.py"})).json()
+    assert "find_by_email" in ok["content"]
+    for bad in ("../../etc/passwd", "/etc/passwd", ".git/config"):
+        assert (await client.get(f"/api/v1/missions/{mid}/files/content", params={"path": bad})).status_code == 403, bad
+    await client.post(f"/api/v1/missions/{mid}/cancel")
+
+
+async def test_per_test_cases_are_real(client):
+    created = await client.post("/api/v1/demo/missions", json={"scenario_id": "sc-3-failing-test"})
+    mid = created.json()["id"]
+    await wait_status(client, mid, {"AWAITING_APPROVAL", "FAILED"})
+    runs = (await client.get(f"/api/v1/missions/{mid}/test-runs")).json()["runs"]
+    base = next(r for r in runs if r["kind"] == "BASELINE")
+    got = (await client.get(f"/api/v1/missions/{mid}/test-runs/{base['id']}/cases")).json()
+    assert got["available"] and {c["status"] for c in got["cases"]} == {"PASSED", "FAILED"}
+    assert sum(c["status"] == "FAILED" for c in got["cases"]) == base["failed"] and len(got["cases"]) == base["total"]
+    assert (await client.get(f"/api/v1/missions/{mid}/test-runs/..%2Fx/cases")).status_code in (200, 404)
+    await client.post(f"/api/v1/missions/{mid}/cancel")

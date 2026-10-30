@@ -1,50 +1,56 @@
 @import "tailwindcss";
 
-/* Design tokens: UI-REGISTRY.md §B. Dark-first; light theme via [data-theme="light"]. */
+/* Cosmic design tokens (UI-REGISTRY §B). Semantic names are unchanged so every existing component restyles automatically. */
 :root {
-  --bg-canvas: #0b0d10;
-  --bg-surface: #12151a;
-  --bg-elevated: #181c22;
-  --bg-hover: #1e232b;
-  --border-subtle: #232830;
-  --border-strong: #323945;
-  --text-primary: #e8eaed;
-  --text-secondary: #a3aab5;
-  --text-muted: #8a92a0;
-  --accent: #6e8bff;
-  --accent-fg: #0b0d10;
-  --st-running: #5aa9ff;
-  --st-success: #3fb68b;
-  --st-warning: #e3a23b;
-  --st-danger: #e5534b;
-  --st-critical: #ff6b9a;
-  --st-neutral: #8a92a0;
-  --st-approval: #b48cff;
-  --diff-add: rgba(63, 182, 139, 0.14);
-  --diff-del: rgba(229, 83, 75, 0.14);
+  --bg-canvas: #030712;            /* deep space */
+  --bg-surface: rgba(13, 21, 43, 0.74);   /* glass panel (#0D152B) */
+  --bg-elevated: #0f1933;
+  --bg-hover: rgba(139, 92, 246, 0.12);
+  --border-subtle: rgba(139, 92, 246, 0.2);
+  --border-strong: rgba(148, 163, 184, 0.3);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #7f8eab;
+  --accent: #8b5cf6;               /* electric violet */
+  --accent-fg: #ffffff;
+  --cyan: #22d3ee;
+  --gold: #fbbf24;
+  --st-running: #60a5fa;           /* neon blue (text-safe tint of #3B82F6) */
+  --st-success: #10b981;
+  --st-warning: #fbbf24;
+  --st-danger: #f43f5e;
+  --st-critical: #fb7185;
+  --st-neutral: #94a3b8;
+  --st-approval: #a78bfa;
+  --diff-add: rgba(16, 185, 129, 0.16);
+  --diff-del: rgba(244, 63, 94, 0.16);
+  --glow-violet: 0 0 0 1px rgba(139, 92, 246, 0.25), 0 8px 40px -12px rgba(139, 92, 246, 0.45);
   color-scheme: dark;
 }
 [data-theme="light"] {
-  --bg-canvas: #ffffff;
-  --bg-surface: #f7f8fa;
+  --bg-canvas: #f4f6fb;
+  --bg-surface: rgba(255, 255, 255, 0.85);
   --bg-elevated: #ffffff;
-  --bg-hover: #eef0f3;
-  --border-subtle: #e4e7ec;
+  --bg-hover: rgba(99, 102, 241, 0.08);
+  --border-subtle: rgba(99, 102, 241, 0.2);
   --border-strong: #cbd0d8;
-  --text-primary: #14171c;
-  --text-secondary: #4a5160;
-  --text-muted: #5d6573;
-  --accent: #3b5bdb;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #5b6678;
+  --accent: #6d28d9;
   --accent-fg: #ffffff;
-  --st-running: #1d6fd1;
-  --st-success: #1c8a5f;
-  --st-warning: #a86a05;
-  --st-danger: #c4352d;
-  --st-critical: #c2255c;
-  --st-neutral: #5d6573;
-  --st-approval: #7a45d6;
-  --diff-add: rgba(28, 138, 95, 0.12);
-  --diff-del: rgba(196, 53, 45, 0.1);
+  --cyan: #0e7490;
+  --gold: #a16207;
+  --st-running: #1d4ed8;
+  --st-success: #047857;
+  --st-warning: #a16207;
+  --st-danger: #be123c;
+  --st-critical: #be185d;
+  --st-neutral: #475569;
+  --st-approval: #6d28d9;
+  --diff-add: rgba(4, 120, 87, 0.12);
+  --diff-del: rgba(190, 18, 60, 0.1);
+  --glow-violet: 0 1px 2px rgba(15, 23, 42, 0.08);
   color-scheme: light;
 }
 
@@ -67,21 +73,67 @@
   --color-critical: var(--st-critical);
   --color-neutral: var(--st-neutral);
   --color-approval: var(--st-approval);
+  --color-cyan: var(--cyan);
+  --color-gold: var(--gold);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-html, body { background: var(--bg-canvas); color: var(--text-primary); }
-body { font-family: var(--font-sans); font-size: 14px; line-height: 22px; font-variant-numeric: tabular-nums; }
-* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+html, body { color: var(--text-primary); }
+body {
+  font-family: var(--font-sans); font-size: 14px; line-height: 22px; font-variant-numeric: tabular-nums;
+  background:
+    radial-gradient(1100px 560px at 88% -8%, rgba(139, 92, 246, 0.2), transparent 62%),
+    radial-gradient(900px 520px at 6% 108%, rgba(59, 130, 246, 0.15), transparent 62%),
+    radial-gradient(700px 400px at 50% 40%, rgba(34, 211, 238, 0.04), transparent 70%),
+    var(--bg-canvas);
+  background-attachment: fixed;
+}
+[data-theme="light"] body { background: var(--bg-canvas); }
+* { scrollbar-width: thin; scrollbar-color: rgba(139, 92, 246, 0.4) transparent; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 4px; }
+
+/* Glass surfaces: a translucent panel, hairline violet border, soft glow. Cheap: one backdrop blur per panel, none on lists. */
+.glass { background: var(--bg-surface); border: 1px solid var(--border-subtle); box-shadow: var(--glow-violet); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); }
+.glass-flat { background: var(--bg-surface); border: 1px solid var(--border-subtle); }
+
+/* Starfield: two static tiles, slow drift on a compositor-only transform. Hidden in light theme / reduced motion. */
+.starfield { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.starfield::before, .starfield::after { content: ""; position: absolute; inset: -400px; will-change: transform; }
+.starfield::before {
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, #fff, transparent), radial-gradient(1px 1px at 180px 120px, #cbd5e1, transparent),
+    radial-gradient(1.5px 1.5px at 300px 40px, #fff, transparent), radial-gradient(1px 1px at 90px 260px, #e2e8f0, transparent),
+    radial-gradient(1px 1px at 360px 220px, #fff, transparent), radial-gradient(1.5px 1.5px at 230px 330px, #a5b4fc, transparent),
+    radial-gradient(1px 1px at 20px 360px, #fff, transparent), radial-gradient(1px 1px at 330px 360px, #bae6fd, transparent);
+  background-size: 400px 400px; opacity: .55; animation: dp-drift 240s linear infinite;
+}
+.starfield::after {
+  background-image: radial-gradient(2px 2px at 120px 90px, #fff, transparent), radial-gradient(2px 2px at 420px 300px, #c4b5fd, transparent), radial-gradient(1.5px 1.5px at 260px 480px, #fff, transparent);
+  background-size: 560px 560px; opacity: .45; animation: dp-drift 420s linear infinite reverse;
+}
+[data-theme="light"] .starfield { display: none; }
+@keyframes dp-drift { to { transform: translate3d(400px, 400px, 0); } }
+
+/* Orbits and planets */
+@keyframes dp-spin { to { transform: rotate(360deg); } }
+@keyframes dp-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes dp-ring { 0% { transform: scale(1); opacity: .65; } 100% { transform: scale(1.6); opacity: 0; } }
+@keyframes dp-dash { to { stroke-dashoffset: -60; } }
+@keyframes dp-core { 0%, 100% { box-shadow: 0 0 60px 8px rgba(251, 191, 36, .45), 0 0 120px 30px rgba(251, 146, 60, .2); } 50% { box-shadow: 0 0 80px 14px rgba(251, 191, 36, .6), 0 0 150px 40px rgba(251, 146, 60, .28); } }
+.orbit-ring { border: 1px solid rgba(148, 163, 184, .18); border-radius: 9999px; position: absolute; }
+.planet { position: relative; border-radius: 9999px; overflow: hidden; }
+.planet::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: conic-gradient(from 0deg, rgba(255,255,255,.14), transparent 30%, rgba(0,0,0,.25) 60%, transparent 85%, rgba(255,255,255,.14)); mix-blend-mode: overlay; animation: dp-spin 40s linear infinite; }
+.pulse-ring { position: absolute; inset: 0; border-radius: 9999px; border: 2px solid currentColor; animation: dp-ring 1.8s ease-out infinite; }
+.flow-line { stroke-dasharray: 6 8; animation: dp-dash 1.2s linear infinite; }
 
 @keyframes dp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 .dp-pulse { animation: dp-pulse 1.2s ease-in-out infinite; }
 @keyframes dp-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
 .dp-in { animation: dp-in .16s cubic-bezier(.2,.8,.2,1); }
 @media (prefers-reduced-motion: reduce) {
-  .dp-pulse, .dp-in { animation: none; }
+  .dp-pulse, .dp-in, .starfield::before, .starfield::after, .planet::after, .pulse-ring, .flow-line { animation: none !important; }
+  .starfield { opacity: .6; }
   * { scroll-behavior: auto !important; transition: none !important; }
 }
 

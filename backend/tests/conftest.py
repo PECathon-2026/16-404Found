@@ -1,10 +1,11 @@
+# ruff: noqa: E402
 from __future__ import annotations
 
 import os
 
 # Hermetic tests: never read real provider keys from the shell or backend/.env (env vars take precedence over .env).
 for _k in ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL", "GITHUB_TOKEN"):
-    os.environ[_k] = ""
+    os.environ[_k] = ""  # noqa: E402
 
 import textwrap
 from pathlib import Path

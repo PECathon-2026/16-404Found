@@ -8,8 +8,9 @@ import type { Diffs, Finding, TestRun, Verification } from "@/lib/types";
 import { SEV_TONE } from "../missions/status";
 
 // ------------------------------------------------------------------ CodeDiffViewer (real unified diffs from git)
-export function DiffPanel({ missionId, diffs, loading }: { missionId: string; diffs: Diffs | null; loading: boolean }) {
-  const [sel, setSel] = useState<string | null>(null);
+export function DiffPanel({ missionId, diffs, loading, selected, onSelect }: { missionId: string; diffs: Diffs | null; loading: boolean; selected?: string | null; onSelect?: (p: string) => void }) {
+  const [picked, setSel] = useState<string | null>(null);
+  const sel = selected && diffs?.files.some((x) => x.path === selected) ? selected : picked;
   const [full, setFull] = useState(false);
   if (loading && !diffs) return <Skeleton className="m-4 h-40" />;
   if (!diffs || diffs.files.length === 0) return <EmptyState icon={<FileCode2 className="h-6 w-6" />} title="No changes yet" description="Edits made by the developer agent appear here as a real git diff of the isolated workspace." />;
@@ -19,7 +20,7 @@ export function DiffPanel({ missionId, diffs, loading }: { missionId: string; di
       <ul aria-label="Changed files" className="border-b border-line md:border-b-0 md:border-r">
         <li className="px-3 py-2 text-[11px] text-fg3">patch <Mono>{shortSha(diffs.patch_sha256)}</Mono></li>
         {diffs.files.map((x) => (
-          <li key={x.path}><button onClick={() => setSel(x.path)} aria-current={x.path === f.path} className={cx("flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-hover", x.path === f.path && "bg-hover")}>
+          <li key={x.path}><button onClick={() => { setSel(x.path); onSelect?.(x.path); }} aria-current={x.path === f.path} className={cx("flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-hover", x.path === f.path && "bg-hover")}>
             <Badge tone={x.change_type === "ADD" ? "success" : x.change_type === "DELETE" ? "danger" : "neutral"}>{x.change_type[0]}</Badge>
             <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{x.path}</span><span className="text-[11px] text-success">+{x.additions}</span><span className="text-[11px] text-danger">−{x.deletions}</span></button></li>))}
       </ul>

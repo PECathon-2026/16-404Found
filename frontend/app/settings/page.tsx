@@ -1,15 +1,25 @@
 "use client";
+import { saveName, useName } from "@/lib/useName";
 import { CheckCircle2, CircleSlash, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Badge, Card, CardHeader, ErrorCard, Skeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { ModelsConfig } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 
+function NameField() {
+  const name = useName();
+  return (
+    <Card><CardHeader title="Display name" /><div className="p-4"><label className="block text-xs font-medium text-fg2">Shown in the dashboard greeting (stored only in this browser)
+      <input className="mt-1 h-9 w-full max-w-xs rounded-md border border-line-strong bg-canvas px-3 text-sm" defaultValue={name === "Commander" ? "" : name} maxLength={40} placeholder="Commander" onChange={(e) => saveName(e.target.value)} /></label></div></Card>
+  );
+}
+
 export default function Page() {
   const { data: c, error, reload } = useApi<ModelsConfig>(() => api.config(), []);
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
       <div><h1 className="text-xl font-semibold">Settings</h1><p className="text-sm text-fg3">Read-only. Keys and models are configured in <code className="font-mono">backend/.env</code>; the browser never sees a key.</p></div>
+      <NameField />
       {error ? <ErrorCard message={error.message} onRetry={reload} /> : !c ? <Skeleton className="h-40" /> : (
         <>
           <Card><CardHeader title="Model providers" /><ul className="divide-y divide-line">{c.providers.map((p) => (

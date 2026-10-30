@@ -380,3 +380,29 @@ Connection semantics: on connection loss show "Reconnecting…" and mark data st
 - Status enums ↔ [AGENTS.md §0.3](AGENTS.md). Never redefine labels; import from `frontend/src/lib/enums.ts` generated from the backend canonical list (T0.05 enum-parity test also checks the generated TS file).
 - Task IDs: T7.01–T7.13 in [PROGRESS-TRACKER.md](PROGRESS-TRACKER.md).
 - Agent names/colors: §B.1 here; canonical ids in AGENTS §0.2.
+
+
+---
+
+## Cosmic Command Center redesign (implemented; supersedes the visual tokens in §B for the running app)
+
+Verified by running: `tsc` and `eslint` clean on all new/changed files, `next build` passes (14 routes), and a headless-browser pass of the full flow at 1600px and 375px (palette, terminal search, run-log import/replay, a full mission to the approval step). No component renders fabricated data.
+
+| Component | File | Data source |
+|---|---|---|
+| Design tokens, glass surfaces, starfield, orbit/planet/pulse keyframes | `app/globals.css` | n/a (honours `prefers-reduced-motion`; light theme keeps tokens, hides the starfield) |
+| Command-bar header, ⌘K palette, nav (11 routes), current-mission block + Stop Mission | `components/AppShell.tsx`, `components/Palette.tsx` | missions, repositories, `/missions/{id}/cancel` |
+| Orbital **AgentGuild** | `features/cosmic/AgentGuild.tsx` | `MissionDetail.agents` (status), `message.sent` (pulses), `tool.failed`/`policy.denied` (failure ring), `repair_cycles` (retry badge). Idle = "standby"/"idle", never animated as working |
+| MissionFlow (7 stages + evidence) | `features/cosmic/MissionFlow.tsx`, `lib/derive.ts` | tasks, test runs, findings, verification, events |
+| Active mission + controls (pause/resume/cancel/approve/reject-with-reason) | `features/cosmic/ActiveMissionPanel.tsx` | mission detail; reuses `ApprovalPanel` |
+| Repository explorer, file view | `features/cosmic/RepoExplorer.tsx`, `DevPanels.tsx` | `GET /missions/{id}/files`, `/files/content` (jailed + redacted) |
+| Per-test results, read-only terminal | `features/cosmic/DevPanels.tsx` | `GET /test-runs/{id}/cases` (junit artifact), tool-call log |
+| Metric cards | `features/cosmic/MetricCards.tsx` | derived from missions; sparkline only with >= 3 missions; "no data" otherwise |
+| Run-log import + replay (from `frontend2`) | `features/cosmic/ImportRunLog.tsx`, `lib/runlog.ts` | local file, DevPilot + legacy JSONL; always labelled "Replay: not live" |
+| New pages | `app/terminal`, `app/tests`, `app/security` | live mission views with a mission picker |
+
+Agent display names: planner = **Shogun**, developer = **Samurai**, tester = **Sentinel**, security = **Shadow**, master = **DevPilot Orchestrator**, verifier = **Verifier** (isolated process). Presentation only; ids are unchanged.
+
+Ideas taken from `frontend2/` (a standalone React-18 prototype with hard-coded sample data): constellation view, command palette, run-log upload + replay with speed, expandable event details, terminal search, reject-with-reason, attempts, evidence report. Its sample data and its separate event format were NOT carried over; an adapter reads its format into real events.
+
+Not done / limitations: no Monaco or xterm.js (a custom unified diff and a read-only log; the sandbox allowlist forbids a writable terminal); no coverage (shown as "not collected"); no "Run Tests" or chat-with-agents controls (the backend has no such endpoint); user avatar/name is local-only (no accounts); the Deployment stage is shown as "Human approval" because DevPilot applies a patch rather than deploying.

@@ -7,9 +7,10 @@ import { clock } from "@/lib/format";
 import type { DevEvent, Msg, ToolCallRow } from "@/lib/types";
 import { SEV_TONE } from "../missions/status";
 
-const AGENT_COLOR: Record<string, string> = { master: "#e3b341", planner: "#6e8bff", developer: "#3fb68b", tester: "#5ad1d9", security: "#e5534b", verifier: "#b48cff", system: "#8a92a0", human: "#e8eaed" };
-export const AgentDot = ({ a }: { a: string }) => <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: AGENT_COLOR[a] ?? "#8a92a0" }} />;
-export const AgentName = ({ a }: { a: string }) => <span className="inline-flex items-center gap-1.5 text-xs font-medium"><AgentDot a={a} />{a}</span>;
+import { guild } from "../cosmic/identity";
+
+export const AgentDot = ({ a }: { a: string }) => { const g = guild(a); return <span aria-hidden className="grid h-5 w-5 shrink-0 place-items-center rounded-full" style={{ background: `${g.color}26`, color: g.color, boxShadow: `0 0 10px rgba(${g.glow},.35)` }}><g.Icon className="h-3 w-3" /></span>; };
+export const AgentName = ({ a }: { a: string }) => { const g = guild(a); return <span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: g.color }}><AgentDot a={a} />{g.name}<span className="font-normal text-fg3">· {g.role}</span></span>; };
 
 type Item = { id: string; at: string; actor: string; kind: string; ev: DevEvent; extra?: DevEvent[] };
 
@@ -62,13 +63,14 @@ export function ActivityFeed({ missionId, events, messages, toolCalls, loading, 
   );
 }
 
-function Row({ icon, actor, at, children, tone, tag }: { icon: React.ReactNode; actor: string; at: string; children: React.ReactNode; tone?: Tone; tag?: string }) {
+function Row({ icon, actor, at, children, tone, tag, details }: { icon: React.ReactNode; actor: string; at: string; children: React.ReactNode; tone?: Tone; tag?: string; details?: unknown }) {
   return (
     <article className="dp-in flex gap-3 px-3 py-2.5">
       <div className="mt-0.5 text-fg3">{icon}</div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2"><AgentName a={actor} />{tag && <Badge tone={tone ?? "neutral"}>{tag}</Badge>}<time className="ml-auto text-[11px] text-fg3" dateTime={at}>{clock(at)}</time></div>
         <div className="mt-0.5 text-sm text-fg2">{children}</div>
+        {details != null && Object.keys(details as object).length > 0 && <details className="mt-1 text-xs"><summary className="cursor-pointer text-fg3 hover:text-fg2">details</summary><pre className="mt-1 max-h-48 overflow-auto rounded border border-line bg-black/30 p-2 font-mono text-[11px] text-fg2">{JSON.stringify(details, null, 2)}</pre></details>}
       </div>
     </article>
   );
@@ -79,46 +81,46 @@ function FeedItem({ item, missionId, msg, tc }: { item: Item; missionId: string;
   const s = (k: string) => (p[k] == null ? "" : String(p[k]));
   switch (item.kind) {
     case "decision.made":
-      return <Row icon={<Gavel className="h-4 w-4" />} actor="master" at={ev.created_at} tag={s("action")} tone={s("action") === "ESCALATE" ? "warning" : s("action") === "RETRY" ? "danger" : "accent"}>
+      return <Row details={ev.payload} icon={<Gavel className="h-4 w-4" />} actor="master" at={ev.created_at} tag={s("action")} tone={s("action") === "ESCALATE" ? "warning" : s("action") === "RETRY" ? "danger" : "accent"}>
         {s("rationale")} <Badge className="ml-1" title="who decided">{s("forced_by")}</Badge></Row>;
     case "message.sent":
-      return <Row icon={<MessageSquare className="h-4 w-4" />} actor={s("sender")} at={ev.created_at} tag={s("type")} tone={msg ? SEV_TONE[msg.severity] : "neutral"}>
+      return <Row details={ev.payload} icon={<MessageSquare className="h-4 w-4" />} actor={s("sender")} at={ev.created_at} tag={s("type")} tone={msg ? SEV_TONE[msg.severity] : "neutral"}>
         <span className="text-fg3"><ArrowRight className="mr-1 inline h-3 w-3" />{s("recipient")}</span> {s("summary")}
         {msg && msg.evidence_refs.length > 0 && <span className="ml-2 inline-flex flex-wrap gap-1">{msg.evidence_refs.slice(0, 3).map((r, i) => <Badge key={i} title={`${r.kind} ${r.id}`}>{r.kind}</Badge>)}</span>}</Row>;
     case "tool": return <ToolCard item={item} missionId={missionId} tc={tc} />;
     case "file.modified":
-      return <Row icon={<FileDiff className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={s("change_type")} tone="success"><Mono>{s("path")}</Mono> <span className="text-success">+{s("additions")}</span> <span className="text-danger">−{s("deletions")}</span>
+      return <Row details={ev.payload} icon={<FileDiff className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={s("change_type")} tone="success"><Mono>{s("path")}</Mono> <span className="text-success">+{s("additions")}</span> <span className="text-danger">−{s("deletions")}</span>
         {Array.isArray(p.tamper_flags) && (p.tamper_flags as string[]).length > 0 && <Badge tone="danger" className="ml-2" icon={<ShieldX className="h-3 w-3" />}>test tampering: {(p.tamper_flags as string[]).join(", ")}</Badge>}</Row>;
     case "test.passed": case "test.failed": {
       const sm = (p.summary ?? {}) as Record<string, number>; const ok = item.kind === "test.passed";
-      return <Row icon={<ClipboardCheck className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={`${s("kind")} · ${s("outcome") || (ok ? "GREEN" : "RED")}`} tone={ok ? "success" : "danger"}>
+      return <Row details={ev.payload} icon={<ClipboardCheck className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={`${s("kind")} · ${s("outcome") || (ok ? "GREEN" : "RED")}`} tone={ok ? "success" : "danger"}>
         {sm.total != null ? `${sm.passed ?? 0}/${sm.total} passed${sm.failed ? `, ${sm.failed} failed` : ""}${sm.errored ? `, ${sm.errored} errors` : ""}` : "no summary"}
         {Array.isArray(p.failure_classes) && (p.failure_classes as string[]).map((c) => <Badge key={c} tone="danger" className="ml-1">{c}</Badge>)}
         {p.degraded ? <Badge tone="warning" className="ml-1" title="a fallback runner was used">degraded evidence</Badge> : null}</Row>;
     }
     case "repair.initiated":
-      return <Row icon={<Repeat className="h-4 w-4" />} actor="master" at={ev.created_at} tag={`repair cycle ${s("attempt")}`} tone="danger">New evidence changed the plan: a repair task was created
+      return <Row details={ev.payload} icon={<Repeat className="h-4 w-4" />} actor="master" at={ev.created_at} tag={`repair cycle ${s("attempt")}`} tone="danger">New evidence changed the plan: a repair task was created
         {p.strategy_change ? <Badge tone="warning" className="ml-2">strategy change required</Badge> : null}{p.failure_fingerprint ? <Mono className="ml-2 text-fg3">{s("failure_fingerprint")}</Mono> : null}</Row>;
     case "finding.created":
-      return <Row icon={<ShieldAlert className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={`${s("severity")} finding`} tone={SEV_TONE[s("severity")]}>{s("category")} at <Mono>{s("file")}:{s("line_start")}</Mono></Row>;
+      return <Row details={ev.payload} icon={<ShieldAlert className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={`${s("severity")} finding`} tone={SEV_TONE[s("severity")]}>{s("category")} at <Mono>{s("file")}:{s("line_start")}</Mono></Row>;
     case "finding.resolved":
-      return <Row icon={<ShieldAlert className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={s("status")} tone="success">{s("category")} at <Mono>{s("file")}:{s("line_start")}</Mono></Row>;
-    case "critique.raised": return <Row icon={<Bug className="h-4 w-4" />} actor={s("from") || item.actor} at={ev.created_at} tag="critique" tone="warning"><ArrowRight className="mr-1 inline h-3 w-3" />{s("to")} · {s("summary")}</Row>;
-    case "critique.resolved": return <Row icon={<Bug className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag="critique resolved" tone="success">{s("resolution")}</Row>;
+      return <Row details={ev.payload} icon={<ShieldAlert className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={s("status")} tone="success">{s("category")} at <Mono>{s("file")}:{s("line_start")}</Mono></Row>;
+    case "critique.raised": return <Row details={ev.payload} icon={<Bug className="h-4 w-4" />} actor={s("from") || item.actor} at={ev.created_at} tag="critique" tone="warning"><ArrowRight className="mr-1 inline h-3 w-3" />{s("to")} · {s("summary")}</Row>;
+    case "critique.resolved": return <Row details={ev.payload} icon={<Bug className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag="critique resolved" tone="success">{s("resolution")}</Row>;
     case "verification.completed": {
       const res = (p.results_summary ?? []) as { ac_id: string; status: string }[];
-      return <Row icon={<ClipboardCheck className="h-4 w-4" />} actor="verifier" at={ev.created_at} tag={`verification ${s("overall")}`} tone={s("overall") === "PASS" ? "success" : s("overall") === "FAIL" ? "danger" : "warning"}>
+      return <Row details={ev.payload} icon={<ClipboardCheck className="h-4 w-4" />} actor="verifier" at={ev.created_at} tag={`verification ${s("overall")}`} tone={s("overall") === "PASS" ? "success" : s("overall") === "FAIL" ? "danger" : "warning"}>
         independent process · {res.map((r) => `${r.ac_id}:${r.status}`).join("  ")}{s("error") && <span className="text-danger"> · {s("error")}</span>}</Row>;
     }
-    case "mission.status_changed": return <Row icon={<Wrench className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={`${s("from")} → ${s("to")}`}>{s("reason")}</Row>;
-    case "human.input_requested": return <Row icon={<UserRound className="h-4 w-4" />} actor="master" at={ev.created_at} tag={s("kind")} tone="warning">{s("question")}</Row>;
-    case "human.input_received": return <Row icon={<UserRound className="h-4 w-4" />} actor="human" at={ev.created_at} tag="answered">{s("option")}</Row>;
-    case "approval.requested": return <Row icon={<Hammer className="h-4 w-4" />} actor="master" at={ev.created_at} tag="approval requested" tone="approval">Gate clear. Review the patch and decide.</Row>;
-    case "approval.resolved": return <Row icon={<Hammer className="h-4 w-4" />} actor="human" at={ev.created_at} tag={s("decision")} tone={s("decision") === "APPROVED" ? "success" : "danger"}>decision recorded against the exact patch hash</Row>;
-    case "policy.denied": return <Row icon={<ShieldX className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag="blocked by policy" tone="danger"><Mono>{s("tool")}</Mono> {s("reason")}</Row>;
-    case "budget.warning": return <Row icon={<ShieldAlert className="h-4 w-4" />} actor="system" at={ev.created_at} tag="budget" tone="warning">{s("resource")} at {s("pct")}% ({s("used")}/{s("limit")})</Row>;
-    case "mission.completed": return <Row icon={<ClipboardCheck className="h-4 w-4" />} actor="master" at={ev.created_at} tag="completed" tone="success">The approved patch was applied.</Row>;
-    case "mission.failed": return <Row icon={<ShieldX className="h-4 w-4" />} actor="system" at={ev.created_at} tag="failed" tone="danger">{s("reason")}</Row>;
+    case "mission.status_changed": return <Row details={ev.payload} icon={<Wrench className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag={`${s("from")} → ${s("to")}`}>{s("reason")}</Row>;
+    case "human.input_requested": return <Row details={ev.payload} icon={<UserRound className="h-4 w-4" />} actor="master" at={ev.created_at} tag={s("kind")} tone="warning">{s("question")}</Row>;
+    case "human.input_received": return <Row details={ev.payload} icon={<UserRound className="h-4 w-4" />} actor="human" at={ev.created_at} tag="answered">{s("option")}</Row>;
+    case "approval.requested": return <Row details={ev.payload} icon={<Hammer className="h-4 w-4" />} actor="master" at={ev.created_at} tag="approval requested" tone="approval">Gate clear. Review the patch and decide.</Row>;
+    case "approval.resolved": return <Row details={ev.payload} icon={<Hammer className="h-4 w-4" />} actor="human" at={ev.created_at} tag={s("decision")} tone={s("decision") === "APPROVED" ? "success" : "danger"}>decision recorded against the exact patch hash</Row>;
+    case "policy.denied": return <Row details={ev.payload} icon={<ShieldX className="h-4 w-4" />} actor={item.actor} at={ev.created_at} tag="blocked by policy" tone="danger"><Mono>{s("tool")}</Mono> {s("reason")}</Row>;
+    case "budget.warning": return <Row details={ev.payload} icon={<ShieldAlert className="h-4 w-4" />} actor="system" at={ev.created_at} tag="budget" tone="warning">{s("resource")} at {s("pct")}% ({s("used")}/{s("limit")})</Row>;
+    case "mission.completed": return <Row details={ev.payload} icon={<ClipboardCheck className="h-4 w-4" />} actor="master" at={ev.created_at} tag="completed" tone="success">The approved patch was applied.</Row>;
+    case "mission.failed": return <Row details={ev.payload} icon={<ShieldX className="h-4 w-4" />} actor="system" at={ev.created_at} tag="failed" tone="danger">{s("reason")}</Row>;
     default: return null;
   }
 }

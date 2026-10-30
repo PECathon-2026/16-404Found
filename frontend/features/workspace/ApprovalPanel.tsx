@@ -45,6 +45,7 @@ export function ApprovalPanel({ d, diffs, tests, findings, verification, onDone 
   const [token, setToken] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [changes, setChanges] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<ApiError | null>(null);
@@ -98,7 +99,7 @@ export function ApprovalPanel({ d, diffs, tests, findings, verification, onDone 
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" onClick={() => setConfirm(true)} disabled={!canApprove} loading={busy === "APPROVED"}><CheckCircle2 className="h-4 w-4" aria-hidden />Approve</Button>
           <Button onClick={() => setChanges(true)} loading={busy === "CHANGES_REQUESTED"}><Undo2 className="h-4 w-4" aria-hidden />Request changes</Button>
-          <Button variant="danger" onClick={() => decide("REJECTED")} loading={busy === "REJECTED"}><ThumbsDown className="h-4 w-4" aria-hidden />Reject</Button>
+          <Button variant="danger" onClick={() => setRejecting(true)} loading={busy === "REJECTED"}><ThumbsDown className="h-4 w-4" aria-hidden />Reject</Button>
         </div>
         {!canApprove && gate?.clear && !ackOk && <p className="text-xs text-warning">Tick “I checked this” for each manually-verified criterion to approve.</p>}
       </div>
@@ -119,6 +120,11 @@ export function ApprovalPanel({ d, diffs, tests, findings, verification, onDone 
         <p className="mb-2 text-sm text-fg2">Describe what should change. The developer agent gets this as repair guidance and everything is re-tested and re-verified.</p>
         <textarea className={textareaCls} rows={4} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="e.g. also handle empty input and add a test for it" />
         <div className="mt-3 flex justify-end gap-2"><Button variant="ghost" onClick={() => setChanges(false)}>Cancel</Button><Button variant="primary" onClick={() => decide("CHANGES_REQUESTED")} disabled={!comment.trim()} loading={busy === "CHANGES_REQUESTED"}>Send</Button></div>
+      </Modal>
+      <Modal open={rejecting} onClose={() => setRejecting(false)} title="Reject this change">
+        <p className="mb-2 text-sm text-fg2">Nothing is applied to your repository. Your reason is stored with the decision so the next run can learn from it.</p>
+        <textarea className={textareaCls} rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Why are you rejecting it?" aria-label="Reason" />
+        <div className="mt-3 flex justify-end gap-2"><Button variant="ghost" onClick={() => setRejecting(false)}>Cancel</Button><Button variant="danger" onClick={() => { setRejecting(false); void decide("REJECTED"); }} disabled={!comment.trim()}>Reject</Button></div>
       </Modal>
       <ShieldAlert className="hidden" />
     </Card>

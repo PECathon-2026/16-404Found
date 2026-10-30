@@ -182,6 +182,10 @@ async def check_test(ctx: ToolContext, a: TestArgs) -> dict:
                                                 "trace_excerpt": text, "suspected_files": []}]}
             outcome = "GREEN" if res.exit_code == 0 else "ERROR"
         enrich_suspects(ctx.workspace, parsed.get("failures", []))
+        if parsed.get("cases"):  # per-test results for the UI live in an artifact (no schema change)
+            import json as _json
+
+            (art / f"cases-{run_id}.json").write_text(_json.dumps(parsed["cases"]))
         row = _row(ctx, run_id, a.kind, runner, " ".join(argv[:3]), sha, parsed, outcome, dur)
         fp = fingerprint(row["failures"]) if row["failures"] else None
         evt = "test.passed" if outcome in ("GREEN", "NO_TESTS") else "test.failed"

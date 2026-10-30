@@ -51,6 +51,7 @@ def parse_junit(xml_text: str) -> dict[str, Any]:
     total = passed = failed = errored = skipped = 0
     dur = 0.0
     failures: list[dict[str, Any]] = []
+    cases: list[dict[str, Any]] = []
     for s in suites:
         dur += float(s.get("time", 0) or 0)
         for tc in s.iter("testcase"):
@@ -60,6 +61,9 @@ def parse_junit(xml_text: str) -> dict[str, Any]:
                 name = f"{tc.get('file')}::{tc.get('name')}"
             bad = tc.find("failure")
             err = tc.find("error")
+            status = "SKIPPED" if tc.find("skipped") is not None else "FAILED" if (bad is not None or err is not None) else "PASSED"
+            if len(cases) < 400:
+                cases.append({"test_id": name, "status": status, "duration_s": float(tc.get("time", 0) or 0)})
             if tc.find("skipped") is not None:
                 skipped += 1
             elif bad is not None or err is not None:
@@ -78,7 +82,7 @@ def parse_junit(xml_text: str) -> dict[str, Any]:
             else:
                 passed += 1
     return {"total": total, "passed": passed, "failed": failed, "errored": errored, "skipped": skipped,
-            "duration_s": round(dur, 3), "failures": failures}
+            "duration_s": round(dur, 3), "failures": failures, "cases": cases}
 
 
 def parse_unittest(output: str) -> dict[str, Any]:

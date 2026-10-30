@@ -29,7 +29,7 @@ export function Button({ variant = "secondary", size = "md", className, loading,
 }
 
 export function Card({ className, children, ...p }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div {...p} className={cx("rounded-lg border border-line bg-surface", className)}>{children}</div>;
+  return <div {...p} className={cx("glass rounded-xl", className)}>{children}</div>;
 }
 export function CardHeader({ title, right, sub }: { title: React.ReactNode; right?: React.ReactNode; sub?: React.ReactNode }) {
   return (
@@ -103,7 +103,7 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}
-        className={cx("dp-in flex max-h-[92vh] w-full flex-col rounded-t-xl border border-line bg-elevated shadow-[0_16px_48px_rgba(0,0,0,.5)] outline-none sm:rounded-xl", wide ? "sm:max-w-3xl" : "sm:max-w-lg")}>
+        className={cx("dp-in flex max-h-[92vh] w-full flex-col rounded-t-xl border border-line bg-elevated shadow-[0_24px_80px_rgba(0,0,0,.65),0_0_0_1px_rgba(139,92,246,.25)] outline-none sm:rounded-xl", wide ? "sm:max-w-3xl" : "sm:max-w-lg")}>
         <div className="flex items-center justify-between border-b border-line px-4 py-3"><h2 className="text-sm font-semibold">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="rounded p-1 text-fg3 hover:bg-hover"><X className="h-4 w-4" /></button></div>
         <div className="overflow-y-auto p-4">{children}</div>
